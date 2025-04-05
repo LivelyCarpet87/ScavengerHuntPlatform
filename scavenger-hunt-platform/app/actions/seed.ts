@@ -27,7 +27,8 @@ async function setup() {
       challGUID TEXT
     );
     CREATE TABLE challenges (
-      challGUID TEXT,  
+      challGUID TEXT,
+      challengeName TEXT,
       minPts INTEGER,
       maxPts INTEGER,
       solveThresh INTEGER,
@@ -45,7 +46,7 @@ async function setup() {
   let ADMIN_PASSWD = process.env.ADMIN_PASSWD || "PLEASE_NO"
   await db.run(
     'INSERT INTO accounts (acctName, acctGUID, passwdHash, priv) VALUES (?, ?, ?, ?);',
-    'Administrator', 
+    'admin', 
     uuidv6(),
     bcrypt.hashSync(ADMIN_PASSWD),
     10
