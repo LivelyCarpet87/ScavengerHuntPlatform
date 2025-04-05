@@ -26,14 +26,13 @@ async function setup() {
       approval INTEGER DEFAULT FALSE,
       challGUID TEXT
     );
-    CREATE TABLE competitions (
-      compGUID TEXT,  
+    CREATE TABLE challenges (
+      challGUID TEXT,  
       minPts INTEGER,
       maxPts INTEGER,
-      diffThresh INTEGER,
+      solveThresh INTEGER,
       unlocked INTEGER,
       unlockTime INTEGER DEFAULT NULL,
-      compName TEXT,
       description TEXT
     );
     CREATE TABLE files (
