@@ -52,7 +52,7 @@ export default function ScoreCard(props:any){
                         {props.approval == 0 ? <input name="approval" type="radio" value={0} className='w-10 h-10 accent-slate-700' defaultChecked></input> : <input name="approval" type="radio" value={0} className='w-10 h-10 accent-slate-700'></input>}
                         {props.approval == 1 ? <input name="approval" type="radio" value={1} className='w-10 h-10 accent-green-700' defaultChecked></input> : <input name="approval" type="radio" value={1} className='w-10 h-10 accent-green-700'></input>}
                     </div>
-                    <input name="points" placeholder='[+/-] x' defaultValue={props.pts} className='w-10 grow border-2 p-1 rounded-sm'></input>
+                    <input name="points" placeholder='[+/-] x' defaultValue={props.points} className='w-10 grow border-2 p-1 rounded-sm'></input>
                     <button className='border-2 p-1 bg-blue-700 rounded-lg'>Update</button>
                 </div>
             </Form>

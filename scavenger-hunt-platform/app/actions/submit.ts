@@ -8,7 +8,7 @@ import { verifyAcct } from '../lib/verifyAcct'
 import fs from 'fs'
 import { revalidatePath } from 'next/cache'
 
-export async function submit(state : any, formData: FormData) {
+export async function submit_chall_resp(state : any, formData: FormData) {
     const user = await verifyAcct()
     const challGUID = formData.get('challGUID')! as string
     const file_submission = formData.get('file-submission') as Blob | undefined
@@ -52,7 +52,7 @@ export async function submit(state : any, formData: FormData) {
     const submGUID = uuidv6()
     if (fileSub.size > 0){
         const fileGUID = uuidv6()
-        const filepath = './public/files/'+fileGUID+ (/.*(\.[A-Za-z0-9]+)/gm.exec(fileSub.name))![1]
+        const filepath = './uploads/'+fileGUID+ (/.*(\.[A-Za-z0-9]+)/gm.exec(fileSub.name))![1]
         fs.writeFileSync(
             filepath,
             Buffer.from(await fileSub.arrayBuffer())
@@ -71,6 +71,77 @@ export async function submit(state : any, formData: FormData) {
         submGUID,
         textSub,
         challGUID,
+        user!.acctGUID
+    )
+    await db.close()
+    return {
+        message: "Pending review..."
+    }
+}
+
+export async function submit_comp_resp(state : any, formData: FormData) {
+    const user = await verifyAcct()
+    const compGUID = formData.get('compGUID')! as string
+    const file_submission = formData.get('file-submission') as Blob | undefined
+    const text_submission = formData.get('text-submission') as string | undefined
+
+    if (!formData.has('compGUID')) {
+        return {
+            errors: "ERR: Competition GUID missing."
+        }
+    }
+    if (!formData.has('text-submission') || !formData.has('file-submission')) {
+        return {
+            errors: "ERR: No content submitted."
+        }
+    }
+    const textSub = (formData.get('text-submission') as string)
+    const fileSub = (formData.get('file-submission') as File)
+    if (textSub.length == 0 && fileSub.size == 0 ) {
+        return {
+            errors: "ERR: No content submitted."
+        }
+    }
+    if (fileSub.size > 10**9){
+        return {
+            errors: "ERR: File too large."
+        }
+    }
+
+    const db = await openDb()
+    const comp = await db.get(
+      'SELECT * FROM competitions WHERE compGUID = ? LIMIT 1;',
+      compGUID
+    )
+    if (!comp) {
+        await db.close()
+        return {
+            errors: "ERR: Invalid compGUID." + compGUID
+        }
+    }
+
+    const submGUID = uuidv6()
+    if (fileSub.size > 0){
+        const fileGUID = uuidv6()
+        const filepath = './uploads/'+fileGUID+ (/.*(\.[A-Za-z0-9]+)/gm.exec(fileSub.name))![1]
+        fs.writeFileSync(
+            filepath,
+            Buffer.from(await fileSub.arrayBuffer())
+        )
+
+        await db.run(
+            'INSERT INTO files (fileGUID, assocGUID, filename) VALUES (?, ?, ?);',
+            fileGUID, 
+            submGUID,
+            fileSub.name
+        )
+    }
+    
+    await db.run(
+        'INSERT INTO submissions (submGUID, time, description, compGUID, acctGUID) VALUES (?, CURRENT_TIMESTAMP, ?, ?, ?);',
+        submGUID,
+        textSub,
+        compGUID,
         user!.acctGUID
     )
     await db.close()

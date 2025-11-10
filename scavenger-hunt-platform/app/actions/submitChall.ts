@@ -52,7 +52,7 @@ export async function submitChall(state : any, formData: FormData) {
     const challGUID = uuidv6()
     if (fileSub.size > 0){
         const fileGUID = uuidv6()
-        const filepath = './public/files/'+fileGUID+ (/.*(\.[A-Za-z0-9]+)/gm.exec(fileSub.name))![1]
+        const filepath = './uploads/'+fileGUID+ (/.*(\.[A-Za-z0-9]+)/gm.exec(fileSub.name))![1]
         fs.writeFileSync(
             filepath,
             Buffer.from(await fileSub.arrayBuffer())
