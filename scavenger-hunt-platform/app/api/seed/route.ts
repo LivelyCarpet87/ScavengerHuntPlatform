@@ -1,10 +1,11 @@
 'use server'
-import { openDb } from './db' 
+import { openDb } from '../../actions/db' 
 import {v6 as uuidv6} from 'uuid'
 import bcrypt from 'bcryptjs'
 import { env } from 'process'
+import { NextResponse } from 'next/server'
 
-async function setup() {
+export async function GET() {
   // Open SQLite connection
   const db = await openDb()
 
@@ -24,7 +25,8 @@ async function setup() {
       pts INTEGER,
       feedback TEXT,
       approval INTEGER DEFAULT FALSE,
-      challGUID TEXT
+      challGUID TEXT,
+      compGUID TEXT
     );
     CREATE TABLE challenges (
       challGUID TEXT,
@@ -35,6 +37,17 @@ async function setup() {
       unlocked INTEGER,
       unlockTime INTEGER DEFAULT NULL,
       description TEXT
+    );
+    CREATE TABLE competitions (
+      compGUID TEXT,
+      compName TEXT,
+      minPts INTEGER,
+      maxPts INTEGER,
+      solveThresh INTEGER,
+      unlocked INTEGER,
+      unlockTime INTEGER DEFAULT NULL,
+      description TEXT,
+      rankSystem TEXT -- MAX, MIN, FIRST, MAX_SUM
     );
     CREATE TABLE files (
       fileGUID TEXT,
@@ -54,9 +67,5 @@ async function setup() {
   
   // Close connection
   await db.close()  
+  return new NextResponse('Databases initialized', { status: 200 });
 }
-
-setup()
-  .catch(err => {
-    console.error(err.message)
-  }) 

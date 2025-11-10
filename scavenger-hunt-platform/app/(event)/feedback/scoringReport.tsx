@@ -8,7 +8,7 @@ export default function ScoringReport(props:any){
     submGUID={subm.submGUID}
     key={subm.submGUID}
     name={subm.challengeName}
-    challDesc={subm.challDesc}
+    desc={subm.challDesc}
     submDesc={subm.challDesc}
     files={filelist} 
     feedback={subm.feedback}
@@ -44,16 +44,15 @@ export default function ScoringReport(props:any){
             </svg>
         )
     }
-
-    const [state, action, pending] = useActionState(scoring, undefined)
     return (
         <div className='flex flex-col gap-2 p-2 border-2 rounded-lg w-72'>
             <div className='flex flex-row gap-2 items-center'>
                 <p className='grow-1 font-bold'>{props.name}</p>
+                {props.isComp ? <p>{props.points}</p> : null}
                 {solveState}
             </div>
             <div className='flex flex-col gap-2 divide-y-3 divide-dashed flex-nowrap'>
-                <p>{props.challDesc}</p>
+                <p>{props.desc}</p>
                 <div>
                     {image && <img src={image} className='h-48 w-full object-cover rounded-md'></img>}
                     <p>{props.submDesc}</p>
