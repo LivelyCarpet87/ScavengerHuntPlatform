@@ -42,6 +42,7 @@ export default function ScoreCard(props:any){
             <div className='flex flex-row gap-2'>
                 {downloadList}
             </div>
+            <div className='grow'></div>
             <Form action={action} className="flex flex-col gap-2 align-items-stretch w-full">
                 {state?.errors && <p>{state.errors}</p>}
                 <input name="feedback" placeholder='Feedback' defaultValue={props.feedback} className='w-full border-2 p-1 rounded-sm'></input>

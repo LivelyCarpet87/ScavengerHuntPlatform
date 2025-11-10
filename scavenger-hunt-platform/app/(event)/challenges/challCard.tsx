@@ -11,7 +11,7 @@ export default function ChallengeCard(props:any){
     let downloadList:any = []
     for (let i = 0; i < props.files.length; i++){
         const fileInfo = props.files[i]
-        downloadList.push(<a href={fileInfo[0]} className='text-blue-700 underline' key={fileInfo[0]}>{fileInfo[1]}</a>)
+        downloadList.push(<a href={fileInfo[0]} className='text-blue-700 underline overflow-hidden text-nowrap text-ellipsis' key={fileInfo[0]}>{fileInfo[1]}</a>)
     }
 
     let image = null
@@ -56,6 +56,7 @@ export default function ChallengeCard(props:any){
             <div className='flex flex-row gap-2'>
                 {downloadList}
             </div>
+            <div className='grow'></div>
             <Form action={action} className="flex flex-col gap-2 align-items-stretch">
                 {state?.errors && <p>{state.errors}</p>}
                 <input type="file" accept="image/*" capture="environment" name="file-submission" className="text-elipses border-2 p-1 rounded-sm" />

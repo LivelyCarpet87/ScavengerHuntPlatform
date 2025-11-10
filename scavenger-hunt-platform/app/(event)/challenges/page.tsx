@@ -62,7 +62,7 @@ export default async function Challenges() {
         <div>
         <main className="px-auto flex flex-col gap-10 items-center p-10 flex-nowrap">
             <p className="text-3xl font-bold">Challenges</p>
-            <div className="flex flex-col md:flex-row gap-5 items-center max-w-full flex-wrap">
+            <div className="flex flex-col md:flex-row gap-5 items-center max-w-full flex-wrap items-stretch">
                 {challengeCards}
             </div>
         </main>

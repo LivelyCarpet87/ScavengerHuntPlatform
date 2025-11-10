@@ -31,7 +31,7 @@ export default async function Challenges() {
         let filelist:string[][] = []
         for (let i = 0; i < files.length;i++){
             filelist.push(
-                ['/files/'+files[i].fileGUID+ (/.*(\.[A-Za-z0-9]+)/gm.exec(files[i].filename))![1] , files[i].filename]
+                ['/uploads/'+files[i].fileGUID+ (/.*(\.[A-Za-z0-9]+)/gm.exec(files[i].filename))![1] , files[i].filename]
             )
         }
 
@@ -53,7 +53,7 @@ export default async function Challenges() {
         <div>
         <main className="px-auto flex flex-col gap-10 items-center p-10 flex-nowrap">
             <p className="text-3xl font-bold">Submissions</p>
-            <div className="flex flex-col md:flex-row gap-5 items-center max-w-full flex-wrap">
+            <div className="flex flex-col md:flex-row gap-5 items-center max-w-full flex-wrap items-stretch">
                 {scoreCards}
             </div>
         </main>
