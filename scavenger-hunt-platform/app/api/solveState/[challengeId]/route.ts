@@ -1,9 +1,9 @@
 import { openDb } from '@/app/actions/db';
 import { verifyAcct } from '@/app/lib/verifyAcct';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(  req: NextRequest,
-  { params }: { params: { challengeId: string } }
+  { params }: { params: Promise<{ challengeId: string }> }
 ) {
     const { challengeId } = await params;
     const user = await verifyAcct()

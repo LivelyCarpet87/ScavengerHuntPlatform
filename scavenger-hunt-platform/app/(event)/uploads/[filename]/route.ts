@@ -7,20 +7,16 @@ import sharp from "sharp"
 // This API serves files located in the "public/files" directory
 export async function GET(
   req: NextRequest,
-  { params }: { params: { filename: string } }
+  { params }: { params: Promise<{ filename: string }> }
 ) {
   const { filename } = await params;
 
   const filePath = path.join('./uploads', filename);
 
-  console.log("filePath >>> ", filePath)
-
   try {
     if (fs.existsSync(filePath)) {
       const fileBuffer = fs.readFileSync(filePath) // Synchronously read the file into a buffer
       const contentType = (await fileTypeFromBuffer(fileBuffer).then((e) => e?.mime)) || "application/gzip" // Extract the content type
-
-      console.log("contentType >>> ", contentType)
 
       // + if the content type is an image, resize it to the specified dimensions & quality
       if (contentType.startsWith("image")) {

@@ -3,7 +3,7 @@ import { verifyAcct } from '@/app/lib/verifyAcct';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(  req: NextRequest,
-  { params }: { params: { compGUID: string } }
+  { params }: { params: Promise<{ compGUID: string }> }
 ) {
     const { compGUID } = await params;
     const user = await verifyAcct()
