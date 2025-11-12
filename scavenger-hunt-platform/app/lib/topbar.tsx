@@ -30,6 +30,9 @@ export default function TopBar(props:any){
                     <Link className="p-2 rounded bg-blue-400 flex flex-row gap-2 items-center" href="/challenges">
                         <p>Challenges</p>
                     </Link>
+                    <Link className="p-2 rounded bg-blue-400 flex flex-row gap-2 items-center" href="/competitions">
+                        <p>Competitions</p>
+                    </Link>
                 </div>
             )}
         </div>
