@@ -20,7 +20,7 @@ export default function TopBar(props:any){
                 </button>
             </div>
             {displayNav && (
-                <div className="flex flex-row justify-between items-center mt-3">
+                <div className="flex flex-row justify-between items-center mt-3 flex-wrap">
                     <Link className="p-2 rounded bg-blue-400 flex flex-row gap-2 items-center" href="/scoreboard">
                         <p>Scoreboard</p>
                     </Link>
