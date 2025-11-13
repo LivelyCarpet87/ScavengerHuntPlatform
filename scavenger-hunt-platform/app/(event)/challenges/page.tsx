@@ -31,7 +31,6 @@ export default async function Challenges() {
         var teamSolveState = 0;
         var teamSolveState_q = await db.get('SELECT MAX(approval) FROM submissions WHERE challGUID = ? AND acctGUID = ?;',[chall.challGUID, user!.acctGUID])
         if (teamSolveState_q){
-            console.log(teamSolveState_q)
             teamSolveState = teamSolveState_q['MAX(approval)']
         }
 
