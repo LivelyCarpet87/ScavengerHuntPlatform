@@ -59,7 +59,7 @@ export default function ChallengeCard(props:any){
             <div className='grow'></div>
             <Form action={action} className="flex flex-col gap-2 align-items-stretch">
                 {state?.errors && <p>{state.errors}</p>}
-                <input type="file" accept="image/*" capture="environment" name="file-submission" className="text-elipses border-2 p-1 rounded-sm" />
+                <input type="file" accept="image/*,video/*" capture="user" name="file-submission" className="text-elipses border-2 p-1 rounded-sm" />
                 <div className="flex flex-row gap-2">
                     <input name="text-submission" placeholder='Text answer' className='w-18 grow border-2 p-1 rounded-sm'></input>
                     <input type='hidden' name='challGUID' value={props.challGUID}></input>
