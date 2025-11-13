@@ -20,17 +20,17 @@ export default function TopBar(props:any){
                 </button>
             </div>
             {displayNav && (
-                <div className="flex flex-row justify-between items-center mt-3 flex-wrap">
-                    <Link className="p-2 rounded bg-blue-400 flex flex-row gap-2 items-center" href="/scoreboard">
+                <div className="flex flex-row justify-between items-center mt-3 flex-wrap gap-2 w-fit">
+                    <Link className="p-2 rounded bg-blue-400 w-32" href="/scoreboard">
                         <p>Scoreboard</p>
                     </Link>
-                    <Link className="p-2 rounded bg-blue-400 flex flex-row gap-2 items-center" href="/feedback">
+                    <Link className="p-2 rounded bg-blue-400 w-32" href="/feedback">
                         <p>Feedback</p>
                     </Link>
-                    <Link className="p-2 rounded bg-blue-400 flex flex-row gap-2 items-center" href="/challenges">
+                    <Link className="p-2 rounded bg-blue-400 w-32" href="/challenges">
                         <p>Challenges</p>
                     </Link>
-                    <Link className="p-2 rounded bg-blue-400 flex flex-row gap-2 items-center" href="/competitions">
+                    <Link className="p-2 rounded bg-blue-400 w-32" href="/competitions">
                         <p>Competitions</p>
                     </Link>
                 </div>
