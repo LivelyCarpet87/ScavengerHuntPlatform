@@ -13,7 +13,7 @@ export const ACCENT_SWATCHES: Record<Accent, Swatch> = {
   water: { label: "Water blue", hex: "#0068AD", hexDark: "#5BB8F5", ink: "#FFFFFF" },
   forest: { label: "Forest green", hex: "#1B7A3E", hexDark: "#52C77C", ink: "#FFFFFF" },
   contour: { label: "Contour brown", hex: "#A64B12", hexDark: "#E8955A", ink: "#FFFFFF" },
-  sun: { label: "Open-land yellow", hex: "#FFC21A", hexDark: "#FFD34D", ink: "#1A1300" },
+  sun: { label: "Open-land gold", hex: "#8F6500", hexDark: "#FFD34D", ink: "#FFFFFF" },
   ink: { label: "Rock black", hex: "#16161A", hexDark: "#F2F2F4", ink: "#FFFFFF" },
 };
 

@@ -90,7 +90,7 @@ export function ControlCard({ cells, className }: { cells: CardCell[]; className
         const box = cn(
           "relative grid aspect-square place-items-center rounded-sm border-2 transition-colors",
           cell.state === "approved" && "border-accent bg-accent-wash",
-          cell.state === "pending" && "border-dashed border-sun-ink/60 bg-sun-wash",
+          cell.state === "pending" && "border-dashed border-sun-fg/70 bg-sun-wash",
           cell.state === "rejected" && "border-danger/60 bg-paper",
           cell.state === "todo" && "border-line-strong bg-paper",
           cell.state === "locked" && "border-dotted border-line-strong bg-mist",

@@ -23,7 +23,7 @@ const variants: Record<ButtonVariant, string> = {
   secondary: "bg-paper text-ink shadow-[inset_0_0_0_2px_var(--ink)] hover:bg-mist",
   quiet: "bg-mist text-ink hover:bg-mist-2",
   ghost: "text-ink hover:bg-mist",
-  danger: "bg-danger text-white hover:brightness-110 dark:text-paper",
+  danger: "bg-danger text-danger-ink hover:brightness-110",
 };
 
 const sizes: Record<ButtonSize, string> = {

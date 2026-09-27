@@ -27,7 +27,8 @@ Look at `/styleguide` (dev only) for every primitive in context.
 | `mist`, `mist-2` | #F2F3F0 … | sunken surfaces: inputs, wells, side rails |
 | `line`, `line-strong` | greys | hairlines, borders |
 | `overprint` / `accent` | #A3129B | **the course**: controls, primary actions, "you" — the only loud color |
-| `sun` | #FFC21A | open-land yellow: pending review, highlighter for your team |
+| `sun` | #FFC21A | open-land yellow: pending review, highlighter for your team (fills only) |
+| `sun-fg` | #7D5800 | text and icons on `sun-wash` ("In review") |
 | `forest` | #1B7A3E | accepted |
 | `danger` | #C4152F | rejected, destructive |
 | `water` | #0068AD | information |

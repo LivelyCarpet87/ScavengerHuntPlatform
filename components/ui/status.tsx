@@ -46,7 +46,7 @@ export function StatusBadge({
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full py-1 pr-2.5 pl-2 text-xs font-semibold",
-        status === "pending" && "bg-sun-wash text-sun-ink dark:text-sun",
+        status === "pending" && "bg-sun-wash text-sun-fg",
         status === "approved" && "bg-forest-wash text-forest",
         status === "rejected" && "bg-danger-wash text-danger",
         className,

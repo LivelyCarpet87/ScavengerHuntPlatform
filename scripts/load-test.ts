@@ -36,6 +36,7 @@ const hunt = await db
   .where(eq(hunts.slug, args.hunt as string))
   .get();
 if (!hunt) throw new Error(`No hunt with slug ${args.hunt}`);
+const huntId = hunt.id;
 const huntTasks = await db.select().from(tasks).where(eq(tasks.huntId, hunt.id));
 const answerTasks = huntTasks.filter((t) => t.kind === "answer" && t.answers.length > 0 && !t.hidden);
 const mediaTasks = huntTasks.filter((t) => t.kind === "media" && !t.hidden && !t.unlockAt);
@@ -116,7 +117,7 @@ async function submitLoop({ token }: { token: string }) {
     else form.append("files", new Blob([new Uint8Array(photo)], { type: "image/jpeg" }), "photo.jpg");
     const t0 = performance.now();
     try {
-      const res = await fetch(`${base}/api/hunts/${hunt.id}/submissions`, {
+      const res = await fetch(`${base}/api/hunts/${huntId}/submissions`, {
         method: "POST",
         body: form,
         headers: { cookie: `shp_session=${token}`, origin: base },
@@ -135,7 +136,7 @@ const standingsLatency: number[] = [];
 async function standingsLoop() {
   while (Date.now() < deadline) {
     const t0 = performance.now();
-    await fetch(`${base}/api/hunts/${hunt.id}/standings`, { headers: { cookie: `shp_session=${tokens[0].token}` } })
+    await fetch(`${base}/api/hunts/${huntId}/standings`, { headers: { cookie: `shp_session=${tokens[0].token}` } })
       .then((r) => r.arrayBuffer())
       .catch(() => {});
     standingsLatency.push(performance.now() - t0);

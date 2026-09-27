@@ -106,7 +106,7 @@ export function Notice({
           className={cn(
             "mt-0.5 shrink-0",
             tone === "info" && "text-water",
-            tone === "warning" && "text-sun-ink dark:text-sun",
+            tone === "warning" && "text-sun-fg",
             tone === "danger" && "text-danger",
             tone === "success" && "text-forest",
           )}
