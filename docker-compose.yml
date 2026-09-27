@@ -1,0 +1,36 @@
+# Scavenger with Docker Compose.
+#
+#   APP_URL=https://hunt.example.com docker compose up -d --build
+#
+# Put settings in a .env file next to this one (Compose reads it), or edit the
+# environment below. Serve it over HTTPS through a reverse proxy — see docs/DEPLOY.md.
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        # Baked into the static offline page; keep it the same as APP_NAME below.
+        APP_NAME: ${APP_NAME:-Scavenger}
+    image: scavenger:latest
+    init: true
+    restart: unless-stopped
+    ports:
+      # Published on localhost only: point your reverse proxy here.
+      - "127.0.0.1:3000:3000"
+    environment:
+      # The public address people open. QR posters, invite links and notifications use it.
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      APP_NAME: ${APP_NAME:-Scavenger}
+      # A real contact address for push services, e.g. mailto:you@example.com.
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
+      # Largest photo or video per file, in MB.
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+    volumes:
+      # Database and uploads. Back this up.
+      - scavenger-data:/data
+    # Time to finish in-flight requests and push notifications on shutdown.
+    stop_grace_period: 30s
+
+volumes:
+  scavenger-data:

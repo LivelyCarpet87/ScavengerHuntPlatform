@@ -36,7 +36,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${archivo.variable} h-full`}>
+    // suppressHydrationWarning: the big screen's pre-paint script sets data-theme on <html> (one level deep only).
+    <html lang="en" className={`${archivo.variable} h-full`} suppressHydrationWarning>
       <body className="min-h-full">
         <OfflineBanner />
         {children}

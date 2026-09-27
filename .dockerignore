@@ -1,0 +1,32 @@
+# Keep the build context small and free of local state and secrets.
+
+# Dependencies and build output are recreated inside the image.
+node_modules
+.next
+public/sw.js
+*.tsbuildinfo
+
+# Local data: databases and uploaded photos never belong in an image.
+data
+
+# Secrets and local settings (the example file is fine).
+.env*
+!.env.example
+
+# Tooling, screenshots, tests and editor files.
+.git
+.github
+.shots
+coverage
+test-results
+playwright-report
+e2e
+.vscode
+.idea
+.DS_Store
+npm-debug.log*
+
+# Docker files themselves.
+Dockerfile
+.dockerignore
+docker-compose.yml
