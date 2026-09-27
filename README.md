@@ -190,6 +190,34 @@ instance for its event stream.
 | `bun scripts/load-test.ts` | Load test against a running production server |
 | `bun scripts/import-mvp.ts` | Imports an event from the original MVP as a new hunt |
 
+## Upgrading from the MVP
+
+This is a rewrite, not an in-place upgrade: the old `scavenger-hunt-platform/`
+app, its `/api/seed` endpoint and its environment variables (`EVENT_NAME`,
+`JWT_SECRET_KEY`, `TEAM_KEY`, `ADMIN_KEY`, `ADMIN_PASSWD`) are gone.
+
+- **Staff** get real accounts: the first one is created at `/setup`, the rest
+  join through invite links (hunt Settings → Staff, or Admin → Settings).
+- **Teams** no longer register with a shared key and password. They type the
+  hunt's six-digit code (or scan its poster) and pick a team name; teammates
+  join with the team's code or QR.
+- **Challenges and competitions** are now tasks: challenges become photo/video
+  tasks (their decaying value maps to *rarity* scoring), competitions become
+  *contest* tasks (MAX/MIN/MAX_SUM/FIRST → highest/lowest/total/earliest).
+
+To bring a past event across — tasks, teams, every submission with its judge
+decision and feedback, and the uploaded photos and videos:
+
+```bash
+bun scripts/import-mvp.ts --db old/data.db --uploads old/uploads \
+  --owner you@example.com --name "Spring Hunt 2025"
+```
+
+It creates a draft hunt owned by `--owner` (create that account first) and
+prints its join code. Admin accounts aren't copied (the MVP stored bcrypt
+hashes); invite those people from the hunt's settings. `--dry-run` shows what
+would be imported.
+
 ## Testing
 
 ```bash
