@@ -1,0 +1,48 @@
+import "server-only";
+import { eq } from "drizzle-orm";
+import { getPlayer, getStaffRole } from "@/lib/auth/access";
+import { db } from "@/lib/db";
+import { type FileRow, submissions, tasks } from "@/lib/db/schema";
+import { canViewGallery, getHuntById, huntPhase, isTaskVisible } from "@/lib/hunts";
+
+/**
+ * Who may fetch an uploaded file:
+ *  - hunt staff: everything in their hunt
+ *  - hunt cover: anyone once the hunt is published
+ *  - task attachments: players of the hunt once the task is visible
+ *  - submission media: the submitting team; others only for accepted
+ *    submissions when the gallery is open to them (see canViewGallery)
+ */
+export async function canViewFile(file: FileRow): Promise<boolean> {
+  if (!file.huntId) return false;
+  const hunt = await getHuntById(file.huntId);
+  if (!hunt) return false;
+  if (await getStaffRole(hunt.id)) return true;
+  if (hunt.status === "draft") return false;
+
+  switch (file.ownerKind) {
+    case "hunt":
+      return true;
+    case "task": {
+      const me = await getPlayer(hunt.id);
+      if (!me || huntPhase(hunt) === "upcoming") return false;
+      const task = await db
+        .select({ hidden: tasks.hidden, unlockAt: tasks.unlockAt })
+        .from(tasks)
+        .where(eq(tasks.id, file.ownerId))
+        .get();
+      return !!task && isTaskVisible(task);
+    }
+    case "submission": {
+      const sub = await db
+        .select({ teamId: submissions.teamId, status: submissions.status })
+        .from(submissions)
+        .where(eq(submissions.id, file.ownerId))
+        .get();
+      if (!sub) return false;
+      const me = await getPlayer(hunt.id);
+      if (me && me.team.id === sub.teamId) return true;
+      return sub.status === "approved" && canViewGallery(hunt, { isStaff: false, isPlayer: !!me });
+    }
+  }
+}

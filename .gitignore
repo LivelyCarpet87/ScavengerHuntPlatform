@@ -1,3 +1,36 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
 
-scavenger-hunt-platform/data.db
-/scavenger-hunt-platform/uploads
+# testing / tooling output
+/coverage
+/test-results
+/playwright-report
+/.shots
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# generated service worker (built from sw/ by `bun run sw:build`)
+/public/sw.js
+
+# runtime data: sqlite database + uploaded files
+/data
+
+# misc
+.DS_Store
+*.pem
+.vercel
+
+# debug
+npm-debug.log*
+.pnpm-debug.log*
+
+# env files (see .env.example)
+.env*
+!.env.example
