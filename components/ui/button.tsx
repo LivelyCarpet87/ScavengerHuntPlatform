@@ -26,12 +26,13 @@ const variants: Record<ButtonVariant, string> = {
   danger: "bg-danger text-danger-ink hover:brightness-110",
 };
 
+// Small sizes suit a mouse; on touch screens they grow to the 44px minimum.
 const sizes: Record<ButtonSize, string> = {
-  sm: "h-9 px-3 text-sm",
+  sm: "h-9 px-3 text-sm pointer-coarse:h-11",
   md: "h-11 px-4 text-[0.9375rem]",
   lg: "h-14 px-6 text-base",
   icon: "size-11",
-  "icon-sm": "size-9",
+  "icon-sm": "size-9 pointer-coarse:size-11",
 };
 
 export function buttonClass(variant: ButtonVariant = "primary", size: ButtonSize = "md", className?: string) {

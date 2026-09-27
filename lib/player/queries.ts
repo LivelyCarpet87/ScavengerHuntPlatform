@@ -1,14 +1,16 @@
 import "server-only";
-import { and, asc, count, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNotNull, ne, notExists, type SQL } from "drizzle-orm";
 import { getStaffRole } from "@/lib/auth/access";
 import { getSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import {
   type Announcement,
+  adjustments,
   announcements,
   type FileRow,
   files,
   type Hunt,
+  hintUnlocks,
   hunts,
   type Player,
   players,
@@ -244,6 +246,53 @@ export async function isTeamNameTaken(huntId: string, name: string, exceptTeamId
     .where(and(eq(teams.huntId, huntId), eq(teams.nameKey, teamNameKey(name))))
     .get();
   return !!row && row.id !== exceptTeamId;
+}
+
+/*
+ * Leaving a team. When the last member leaves (or moves to another team), a
+ * team that a player started and that never did anything in the hunt — no
+ * submissions, hint reveals or score adjustments — is removed with them, so
+ * it doesn't sit on the scoreboard and the big screen with nobody on it, or
+ * keep its name taken. Teams the organizers set up, and teams with anything
+ * to their name, stay.
+ */
+
+/**
+ * Matches `teamId` only while it's an abandoned team as described above.
+ * `leaving` is a member who is about to go, counted as gone already.
+ */
+export function abandonedTeam(teamId: string, leaving?: string): SQL | undefined {
+  return and(
+    eq(teams.id, teamId),
+    eq(teams.origin, "player"),
+    notExists(
+      db
+        .select({ id: players.id })
+        .from(players)
+        .where(and(eq(players.teamId, teamId), leaving ? ne(players.id, leaving) : undefined)),
+    ),
+    notExists(db.select({ id: submissions.id }).from(submissions).where(eq(submissions.teamId, teamId))),
+    notExists(db.select({ id: hintUnlocks.hintId }).from(hintUnlocks).where(eq(hintUnlocks.teamId, teamId))),
+    notExists(db.select({ id: adjustments.id }).from(adjustments).where(eq(adjustments.teamId, teamId))),
+  );
+}
+
+/**
+ * What happens to a team when `playerId` leaves it: others carry on
+ * ("stays"), it's removed ("removed"), or it keeps its points with nobody on
+ * it ("empty").
+ */
+export type LeavingOutcome = "stays" | "removed" | "empty";
+
+export async function leavingOutcome(teamId: string, playerId: string): Promise<LeavingOutcome> {
+  const others = await db
+    .select({ n: count() })
+    .from(players)
+    .where(and(eq(players.teamId, teamId), ne(players.id, playerId)))
+    .get();
+  if ((others?.n ?? 0) > 0) return "stays";
+  const gone = await db.select({ id: teams.id }).from(teams).where(abandonedTeam(teamId, playerId)).get();
+  return gone ? "removed" : "empty";
 }
 
 /** A free variation of a taken team name, e.g. "Night Owls 2". */

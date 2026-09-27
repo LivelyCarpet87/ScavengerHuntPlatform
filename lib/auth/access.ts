@@ -3,7 +3,17 @@ import { and, eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/lib/db";
-import { huntStaff, type Player, players, type StaffRole, type Team, teams, type User } from "@/lib/db/schema";
+import {
+  huntStaff,
+  type Player,
+  players,
+  type StaffRole,
+  sessions,
+  type Team,
+  teams,
+  type User,
+  users,
+} from "@/lib/db/schema";
 import { getHuntById, getHuntBySlug } from "@/lib/hunts";
 import { getSession } from "./session";
 
@@ -36,6 +46,15 @@ export const getStaffRole = cache(async (huntId: string): Promise<StaffRole | nu
     .get();
   return row?.role ?? null;
 });
+
+/** Whether a staff account may create new hunts (admins always can). */
+export function canCreateHunts(user: Pick<User, "isAdmin" | "canCreateHunts">): boolean {
+  return user.isAdmin || user.canCreateHunts;
+}
+
+/** What to tell a signed-in user who may judge but not create hunts. */
+export const CANNOT_CREATE_HUNTS =
+  "Your account can work on the hunts you're invited to, but can't create new ones. Ask a platform admin for organizer access.";
 
 /** Page/action guard for signed-in staff users. Redirects to /login otherwise. */
 export async function requireUser(next?: string): Promise<User> {
@@ -77,6 +96,39 @@ export const getPlayer = cache(async (huntId: string): Promise<PlayerContext | n
     .get();
   return row ?? null;
 });
+
+/**
+ * What a device session is in a hunt right now, read from the database alone
+ * (no request cookies): for event streams, which outlive the request that
+ * opened them and must notice a sign-out, a removed judge or a player who
+ * left their team.
+ */
+export async function sessionStanding(
+  sessionId: string,
+  huntId: string,
+): Promise<{ role: StaffRole | null; teamId: string | null }> {
+  const row = await db
+    .select({ userId: sessions.userId, expiresAt: sessions.expiresAt, isAdmin: users.isAdmin })
+    .from(sessions)
+    .leftJoin(users, eq(users.id, sessions.userId))
+    .where(eq(sessions.id, sessionId))
+    .get();
+  if (!row || row.expiresAt.getTime() < Date.now()) return { role: null, teamId: null };
+  const staff =
+    row.userId && !row.isAdmin
+      ? await db
+          .select({ role: huntStaff.role })
+          .from(huntStaff)
+          .where(and(eq(huntStaff.huntId, huntId), eq(huntStaff.userId, row.userId)))
+          .get()
+      : null;
+  const player = await db
+    .select({ teamId: players.teamId })
+    .from(players)
+    .where(and(eq(players.huntId, huntId), eq(players.sessionId, sessionId)))
+    .get();
+  return { role: row.isAdmin ? "owner" : (staff?.role ?? null), teamId: player?.teamId ?? null };
+}
 
 /**
  * Resolves /h/[slug] for players: 404s for unknown or draft hunts (unless the

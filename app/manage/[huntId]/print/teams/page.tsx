@@ -7,11 +7,14 @@ import { QrCode } from "@/components/ui/qr-code";
 import { requireStaff } from "@/lib/auth/access";
 import { formatCode } from "@/lib/ids";
 import { teamColorHex } from "@/lib/palette";
+import { staffTitle } from "@/lib/staff/metadata";
 import { listTeams } from "@/lib/staff/queries";
 import { absoluteUrl, links } from "@/lib/url";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Team cards" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Team cards");
+}
 
 const PER_SHEET = 8;
 const PIN_HOLES = [

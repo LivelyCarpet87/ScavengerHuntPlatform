@@ -1,7 +1,7 @@
 /** Skeleton for the admin lists while their queries run. The header and tabs stay in place (layout). */
 export default function AdminLoading() {
   return (
-    <div aria-busy="true" className="animate-pulse">
+    <div aria-busy="true">
       <span className="sr-only">Loading</span>
       <div className="h-5 w-56 rounded-sm bg-mist" />
       <ul className="mt-6 divide-y divide-line">

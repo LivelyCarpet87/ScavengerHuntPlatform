@@ -23,41 +23,64 @@ export function formatSchedule(start: Date | null, end: Date | null, timeZone: s
 export type CurveInput = Pick<Task, "scoring" | "points" | "minPoints" | "decaySolves">;
 export type LadderInput = Pick<Task, "points" | "minPoints" | "contestPlaces">;
 
-/** The number of solves a preview should show: every step down to the floor. */
-function curveLength(t: Pick<Task, "decaySolves">): number {
-  return Math.min(Math.max(2, Math.floor(t.decaySolves) || 2), 20);
+/** Most bars a curve preview draws; longer curves are sampled evenly. */
+export const CURVE_PREVIEW_POINTS = 20;
+
+/** The solve that reaches the minimum (the engine's `decaySolves`, at least 2). */
+function floorSolve(t: Pick<Task, "decaySolves">): number {
+  return Math.max(2, Math.floor(t.decaySolves) || 2);
 }
 
-/** Value of each solve from the 1st to the one that reaches the minimum (engine rules). */
+function solveValue(t: CurveInput, solves: number): number {
+  return t.scoring === "fixed" ? t.points : decayValue(solves, t.points, t.minPoints, t.decaySolves);
+}
+
+/**
+ * The points a curve preview shows, from the 1st solve to the one that
+ * reaches the minimum (engine rules). Up to 20 solves each get a point; longer
+ * curves are sampled at 20 evenly spaced solve counts that always include the
+ * 1st and the last, each labelled with its real solve count.
+ */
+export function curvePoints(t: CurveInput): { solves: number; value: number }[] {
+  const floor = floorSolve(t);
+  const n = Math.min(floor, CURVE_PREVIEW_POINTS);
+  return Array.from({ length: n }, (_, i) => {
+    const solves = floor <= CURVE_PREVIEW_POINTS ? i + 1 : 1 + Math.round((i * (floor - 1)) / (n - 1));
+    return { solves, value: solveValue(t, solves) };
+  });
+}
+
+/** Value of each previewed solve (see curvePoints). */
 export function curveValues(t: CurveInput): number[] {
-  const n = curveLength(t);
-  return Array.from({ length: n }, (_, i) =>
-    t.scoring === "fixed" ? t.points : decayValue(i + 1, t.points, t.minPoints, t.decaySolves),
-  );
+  return curvePoints(t).map((p) => p.value);
+}
+
+/**
+ * Label for a point on the curve: "3rd" (race) or "3 teams" (rarity). The
+ * last point is the minimum, which holds for every later solve too: "30th+",
+ * "30+ teams".
+ */
+export function curveLabel(scoring: Task["scoring"], solves: number, last: boolean): string {
+  const plus = last ? "+" : "";
+  if (scoring === "race") return `${ordinal(solves)}${plus}`;
+  return `${solves}${plus} ${solves === 1 && !last ? "team" : "teams"}`;
 }
 
 /**
  * Text twin of the curve preview, e.g.
  *   race:   "1st: 150, 2nd: 147 … 6th+: 60"
  *   rarity: "1 team: 150 each, 2 teams: 147 each … 6+ teams: 60 each"
+ * It names real solve counts, however long the curve.
  */
 export function describeCurve(t: CurveInput): string {
   if (t.scoring === "fixed") return `Every team that solves it earns ${formatPoints(t.points)}.`;
-  const values = curveValues(t);
-  const n = values.length;
-  const label = (i: number, last: boolean) => {
-    const pos = i + 1;
-    if (t.scoring === "race") return last ? `${ordinal(pos)}+` : ordinal(pos);
-    const teams = last ? `${pos}+ teams` : pos === 1 ? "1 team" : `${pos} teams`;
-    return teams;
+  const floor = floorSolve(t);
+  const item = (solves: number) => {
+    const v = formatPoints(solveValue(t, solves));
+    return `${curveLabel(t.scoring, solves, solves === floor)}: ${t.scoring === "rarity" ? `${v} each` : v}`;
   };
-  const item = (i: number) => {
-    const last = i === n - 1;
-    const v = formatPoints(values[i]);
-    return `${label(i, last)}: ${t.scoring === "rarity" ? `${v} each` : v}`;
-  };
-  if (n <= 4) return values.map((_, i) => item(i)).join(", ");
-  return `${item(0)}, ${item(1)} … ${item(n - 1)}`;
+  if (floor <= 4) return Array.from({ length: floor }, (_, i) => item(i + 1)).join(", ");
+  return `${item(1)}, ${item(2)} … ${item(floor)}`;
 }
 
 export function ladderValues(t: LadderInput): number[] {
@@ -89,13 +112,13 @@ export function scoringSummary(
     const value =
       ladder.length <= 3
         ? ladder.map(formatPoints).join(" / ")
-        : `${formatPoints(ladder[0])} → ${formatPoints(ladder[ladder.length - 1])}`;
+        : `${formatPoints(ladder[0])}–${formatPoints(ladder[ladder.length - 1])}`;
     return { value, note: `Top ${ladder.length}, ${RANK_NOTES[t.contestRank]}` };
   }
   if (t.scoring === "fixed") return { value: formatPoints(t.points), note: "Fixed" };
   const floor = Math.min(t.minPoints, t.points);
   return {
-    value: `${formatPoints(t.points)} → ${formatPoints(floor)}`,
+    value: `${formatPoints(t.points)}–${formatPoints(floor)}`,
     note: t.scoring === "rarity" ? "Rarity" : "Race",
   };
 }

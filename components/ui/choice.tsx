@@ -5,9 +5,18 @@ import { cn } from "@/lib/utils";
  * Radio choices rendered as selectable cards (for decisions that deserve an
  * explanation, like task type or scoring mode) or as a compact segmented row.
  * Native radios underneath: they submit with forms and work with keyboards.
+ * Name the group: `label` (the visible heading's words) or `labelledBy` (its
+ * id); inside a <fieldset> with a <legend>, neither is needed.
  */
 
 export type ChoiceOption = { value: string; label: ReactNode; description?: ReactNode; icon?: ReactNode };
+
+type GroupName = {
+  /** Accessible name of the group, e.g. the heading shown above it. */
+  label?: string;
+  /** Id of the element that names the group. */
+  labelledBy?: string;
+};
 
 export function ChoiceCards({
   name,
@@ -16,6 +25,8 @@ export function ChoiceCards({
   className,
   columns = 2,
   onChange,
+  label,
+  labelledBy,
 }: {
   name: string;
   options: ChoiceOption[];
@@ -23,11 +34,13 @@ export function ChoiceCards({
   className?: string;
   columns?: 1 | 2 | 3 | 4;
   onChange?: (value: string) => void;
-}) {
+} & GroupName) {
   const id = useId();
   return (
     <div
       role="radiogroup"
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
       className={cn(
         "grid gap-2",
         columns === 2 && "sm:grid-cols-2",
@@ -62,6 +75,11 @@ export function ChoiceCards({
   );
 }
 
+/**
+ * A compact row of choices. The chosen one is a paper chip with an ink edge —
+ * shape as well as tone, so it reads in sunlight and without color. Segments
+ * grow to 44px on touch screens.
+ */
 export function Segmented({
   name,
   options,
@@ -69,6 +87,8 @@ export function Segmented({
   className,
   onChange,
   size = "md",
+  label,
+  labelledBy,
 }: {
   name: string;
   options: { value: string; label: ReactNode }[];
@@ -76,16 +96,23 @@ export function Segmented({
   className?: string;
   onChange?: (value: string) => void;
   size?: "sm" | "md";
-}) {
+} & GroupName) {
   const id = useId();
   return (
-    <div role="radiogroup" className={cn("inline-flex rounded-md bg-mist p-1", className)}>
+    <div
+      role="radiogroup"
+      aria-label={labelledBy ? undefined : label}
+      aria-labelledby={labelledBy}
+      className={cn("inline-flex rounded-md bg-mist p-1", className)}
+    >
       {options.map((opt) => (
         <label
           key={opt.value}
           htmlFor={`${id}-${opt.value}`}
           className={cn(
-            "flex cursor-pointer items-center justify-center rounded-sm px-3 font-semibold text-ink-2 transition-colors hover:text-ink has-checked:bg-paper has-checked:text-ink has-checked:shadow-sm has-focus-visible:outline-3 has-focus-visible:outline-overprint",
+            "flex cursor-pointer items-center justify-center rounded-sm px-3 font-semibold text-ink-2 transition-colors hover:text-ink pointer-coarse:h-11",
+            "has-checked:bg-paper has-checked:text-ink has-checked:shadow-[inset_0_0_0_2px_var(--ink)]",
+            "has-focus-visible:outline-3 has-focus-visible:outline-overprint",
             size === "sm" ? "h-8 text-sm" : "h-10 text-[0.9375rem]",
           )}
         >

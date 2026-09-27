@@ -6,11 +6,15 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { ControlMarker, type ControlState } from "@/components/ui/control";
 import { StatusGlyph } from "@/components/ui/status";
 import { cn } from "@/lib/utils";
+import { groupByCategory } from "./task-order";
 
 /*
  * The hunt home's task list: one row per visible task, grouped by category,
  * with filter chips (All / To do / In review / Done) kept in ?filter= so a
  * refresh or a shared link keeps the view. Filtering happens on the device.
+ * While the hunt runs, each category lists what's left to do first, then
+ * what's with the judges, then what's done (the organizer's order within
+ * each), so the next task to pick is never buried under finished ones.
  */
 
 export type TaskFilter = "all" | "todo" | "review" | "done";
@@ -88,7 +92,7 @@ export function TaskList({
   };
 
   const shown = filter === "all" ? rows : rows.filter((r) => r.bucket === filter);
-  const groups = groupByCategory(shown);
+  const groups = groupByCategory(shown, !over);
   const empty = FILTERS.find((f) => f.key === filter)?.empty;
 
   return (
@@ -122,8 +126,9 @@ export function TaskList({
       {shown.length === 0 ? (
         <p className="rounded-lg bg-mist px-4 py-6 text-center text-ink-2">{empty}</p>
       ) : (
+        // A plain block per category: its heading gives the structure, without a landmark per category.
         groups.map((group) => (
-          <section key={group.name ?? "_"} aria-label={group.name ?? "Tasks"}>
+          <div key={group.name ?? "_"}>
             {group.name ? (
               <h3 className="mt-2 mb-1 font-cond text-lg font-bold tracking-tight text-ink-2">{group.name}</h3>
             ) : null}
@@ -134,7 +139,7 @@ export function TaskList({
                 </li>
               ))}
             </ul>
-          </section>
+          </div>
         ))
       )}
     </div>
@@ -194,23 +199,4 @@ function StatusLine({ status }: { status: NonNullable<TaskRowData["status"]> }) 
       {status.text}
     </span>
   );
-}
-
-function groupByCategory(rows: TaskRowData[]): { name: string | null; rows: TaskRowData[] }[] {
-  const hasCategories = rows.some((r) => r.category);
-  if (!hasCategories) return [{ name: null, rows }];
-  const groups = new Map<string, TaskRowData[]>();
-  for (const r of rows) {
-    const key = r.category ?? "";
-    const list = groups.get(key) ?? [];
-    list.push(r);
-    groups.set(key, list);
-  }
-  // Uncategorized tasks go last, under a plain heading.
-  const named = [...groups.entries()].filter(([k]) => k !== "");
-  const rest = groups.get("");
-  return [
-    ...named.map(([name, list]) => ({ name, rows: list })),
-    ...(rest ? [{ name: "More tasks", rows: rest }] : []),
-  ];
 }

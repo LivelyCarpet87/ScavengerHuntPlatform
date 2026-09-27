@@ -4,12 +4,23 @@ import Link from "next/link";
 import { memo, type Ref, useId } from "react";
 import { Ordinal } from "@/components/ui/bib";
 import { Input, Textarea } from "@/components/ui/field";
+import { Kbd } from "@/components/ui/misc";
 import { formatPoints, ordinal } from "@/lib/format";
 import { formatMeasured, possessive } from "@/lib/judging/labels";
 import type { Draft, JudgeTask, JudgeTeam } from "@/lib/judging/types";
-import type { ApprovalProjection } from "@/lib/judging/what-if";
+import { type ApprovalProjection, measuredNeedsEcho, parseMeasured } from "@/lib/judging/what-if";
 import { cn } from "@/lib/utils";
 import { KeyHint } from "./key-hint";
+
+/** "Enter approves", next to a field whose Enter key approves (the queue handles the key). */
+function EnterHint() {
+  return (
+    <span aria-hidden className="ml-auto hidden items-center gap-1.5 text-xs font-medium text-ink-2 lg:flex">
+      <Kbd className="h-6 min-w-6 text-xs">Enter</Kbd>
+      approves
+    </span>
+  );
+}
 
 export type FieldError = { field: "contestValue" | "pointsOverride" | "feedback" | null; message: string };
 
@@ -25,6 +36,7 @@ function PointsFieldImpl({
   valueRef,
   overrideRef,
   showKeys,
+  approveOnEnter,
 }: {
   task: JudgeTask;
   team: JudgeTeam;
@@ -35,7 +47,10 @@ function PointsFieldImpl({
   error: FieldError | null;
   valueRef?: Ref<HTMLInputElement>;
   overrideRef?: Ref<HTMLInputElement>;
+  /** Show single-key shortcut hints (P). */
   showKeys?: boolean;
+  /** Enter in the points or value field approves (the judging queue handles the key). */
+  approveOnEnter?: boolean;
 }) {
   const id = useId();
   if (task.kind === "contest") {
@@ -51,6 +66,7 @@ function PointsFieldImpl({
         error={error?.field === "contestValue" ? error.message : null}
         valueRef={valueRef}
         showKeys={showKeys}
+        approveOnEnter={approveOnEnter}
       />
     );
   }
@@ -100,10 +116,13 @@ function PointsFieldImpl({
 
       {overriding ? (
         <div className="mt-1 flex flex-col gap-1.5">
-          <label htmlFor={`${id}-override`} className="flex items-center gap-2 text-sm font-semibold">
-            Points to award
-            {showKeys ? <KeyHint k="P" className="hidden lg:inline-flex" /> : null}
-          </label>
+          <div className="flex items-center gap-2">
+            <label htmlFor={`${id}-override`} className="flex items-center gap-2 text-sm font-semibold">
+              Points to award
+              {showKeys ? <KeyHint k="P" className="hidden lg:inline-flex" /> : null}
+            </label>
+            {approveOnEnter ? <EnterHint /> : null}
+          </div>
           <p id={`${id}-override-hint`} className="-mt-1 text-sm text-ink-2">
             Replaces the computed value for this team. Use it for partial credit or a bonus.
           </p>
@@ -117,6 +136,7 @@ function PointsFieldImpl({
               onChange={(e) => onDraft({ override: e.target.value })}
               aria-invalid={overrideError ? true : undefined}
               aria-describedby={`${id}-override-hint${overrideError ? ` ${id}-override-error` : ""}`}
+              aria-keyshortcuts={approveOnEnter ? "Enter" : undefined}
               className="w-32 font-bib text-xl"
             />
             <button
@@ -128,7 +148,7 @@ function PointsFieldImpl({
             </button>
           </div>
           {overrideError ? (
-            <p id={`${id}-override-error`} className="text-sm font-medium text-danger">
+            <p id={`${id}-override-error`} role="alert" className="text-sm font-medium text-danger">
               {overrideError}
             </p>
           ) : null}
@@ -158,6 +178,7 @@ function ContestField({
   error,
   valueRef,
   showKeys,
+  approveOnEnter,
 }: {
   id: string;
   task: JudgeTask;
@@ -169,17 +190,26 @@ function ContestField({
   error: string | null;
   valueRef?: Ref<HTMLInputElement>;
   showKeys?: boolean;
+  approveOnEnter?: boolean;
 }) {
   const ranking = projection.ranking ?? [];
   const place = projection.place;
   const unit = task.contestUnit;
+  // The value as read, so "1,500" or "18,5" can be checked before approving.
+  const parsed = parseMeasured(draft.value);
+  const value = parsed != null && Number.isFinite(parsed) ? parsed : null;
+  const echo = value != null && measuredNeedsEcho(draft.value) ? `Reads as ${formatMeasured(value, unit)}` : null;
+  const what = task.needsValue && value != null ? formatMeasured(value, unit) : "That";
 
   let summary: string;
   if (projection.hidden) summary = "Hidden team: its entries never take contest places.";
   else if (place == null) summary = "Enter the value to see where they place.";
   else if (place <= task.contestPlaces)
-    summary = `That places ${team.name} ${ordinal(place)}, worth ${formatPoints(projection.points)}.`;
-  else summary = `That places ${team.name} ${ordinal(place)}, outside the ${task.contestPlaces} scoring places.`;
+    summary = `${what} places ${team.name} ${ordinal(place)}, worth ${formatPoints(projection.points)}.`;
+  else summary = `${what} places ${team.name} ${ordinal(place)}, outside the ${task.contestPlaces} scoring places.`;
+  const describedBy = [`${id}-value-hint`, echo ? `${id}-value-echo` : null, error ? `${id}-value-error` : null]
+    .filter(Boolean)
+    .join(" ");
 
   // Show the scoring places plus this team's row if it lands lower.
   const shown = ranking.filter((e) => e.place <= task.contestPlaces || e.teamId === team.id);
@@ -188,10 +218,13 @@ function ContestField({
     <div className="flex flex-col gap-3">
       {task.needsValue ? (
         <div className="flex flex-col gap-1.5">
-          <label htmlFor={`${id}-value`} className="flex items-center gap-2 text-sm font-semibold">
-            Measured value{unit ? ` in ${unit}` : ""}
-            {showKeys ? <KeyHint k="P" className="hidden lg:inline-flex" /> : null}
-          </label>
+          <div className="flex items-center gap-2">
+            <label htmlFor={`${id}-value`} className="flex items-center gap-2 text-sm font-semibold">
+              Measured value{unit ? ` in ${unit}` : ""}
+              {showKeys ? <KeyHint k="P" className="hidden lg:inline-flex" /> : null}
+            </label>
+            {approveOnEnter ? <EnterHint /> : null}
+          </div>
           <p id={`${id}-value-hint`} className="-mt-1 text-sm text-ink-2">
             {task.contestRank === "lowest"
               ? "Lowest value wins."
@@ -208,7 +241,8 @@ function ContestField({
               value={draft.value}
               onChange={(e) => onDraft({ value: e.target.value })}
               aria-invalid={error ? true : undefined}
-              aria-describedby={`${id}-value-hint${error ? ` ${id}-value-error` : ""}`}
+              aria-describedby={describedBy}
+              aria-keyshortcuts={approveOnEnter ? "Enter" : undefined}
               className={cn("font-bib text-xl", unit && "pr-16")}
             />
             {unit ? (
@@ -217,6 +251,11 @@ function ContestField({
               </span>
             ) : null}
           </div>
+          {echo ? (
+            <p id={`${id}-value-echo`} className="text-sm font-semibold text-ink">
+              {echo}
+            </p>
+          ) : null}
           {error ? (
             <p id={`${id}-value-error`} role="alert" className="text-sm font-medium text-danger">
               {error}
@@ -283,6 +322,7 @@ function FeedbackFieldImpl({
   autoFocus?: boolean;
 }) {
   const id = useId();
+  const errorId = `${id}-feedback-error`;
   return (
     <div className="flex flex-col gap-2">
       <label htmlFor={`${id}-feedback`} className="flex items-center gap-2 text-sm font-semibold">
@@ -325,10 +365,15 @@ function FeedbackFieldImpl({
         onChange={(e) => onChange(e.target.value)}
         maxLength={1000}
         aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         placeholder="Shown to the team with the result"
         className="min-h-20"
       />
-      {error ? <p className="text-sm font-medium text-danger">{error}</p> : null}
+      {error ? (
+        <p id={errorId} role="alert" className="text-sm font-medium text-danger">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

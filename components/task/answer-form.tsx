@@ -5,19 +5,28 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { toast } from "@/components/ui/toast";
 import { plural } from "@/lib/format";
+import { ActionBar } from "./action-bar";
 import type { SubmissionReply } from "./send";
 import type { ActionTask } from "./task-types";
 import { useSubmitter } from "./use-submitter";
 
-/** One text field and "Check answer" — auto-checked answers reply instantly. */
+/**
+ * One text field and "Check answer" — auto-checked answers reply instantly.
+ * On phones the field sits in the pinned action bar, like the camera button
+ * on photo tasks, so it's reachable however long the riddle is. The field
+ * keeps focus while the answer is checked, and a wrong answer is announced
+ * and selected for the next try.
+ */
 export function AnswerForm({
   huntId,
+  teamId,
   task,
   wrongAttempts,
   onDone,
   onQueued,
 }: {
   huntId: string;
+  teamId: string;
   task: ActionTask;
   wrongAttempts: number;
   onDone: (reply: SubmissionReply) => void;
@@ -27,20 +36,22 @@ export function AnswerForm({
   const [message, setMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const id = useId();
-  const { submit, busy } = useSubmitter(huntId, task.id);
+  const { submit, busy } = useSubmitter(huntId, task.id, teamId);
 
   const max = task.maxAttempts;
   const left = max != null ? Math.max(0, max - wrongAttempts) : null;
-  // The result line under the field already counts what's left, so the standing hint steps aside for it.
-  const attemptsHint =
-    max == null || left == null || message
-      ? undefined
-      : left === max
+  const hint =
+    max != null && left != null
+      ? left === max
         ? `Your team has ${plural(max, "attempt")}.`
-        : `${plural(left, "attempt")} left out of ${max}.`;
+        : `${plural(left, "attempt")} left out of ${max}.`
+      : task.autoChecked
+        ? "Wrong answers cost no points."
+        : "If the judge doesn’t accept it, you can answer again.";
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (busy) return;
     const answer = value.trim();
     if (!answer) {
       setMessage("Type your answer first.");
@@ -57,7 +68,7 @@ export function AnswerForm({
             attemptsLeft == null
               ? "Not quite. Try again."
               : attemptsLeft === 0
-                ? "Not quite, and that was your team's last attempt."
+                ? "Not quite, and that was your team’s last attempt."
                 : `Not quite. ${plural(attemptsLeft, "attempt")} left.`,
           );
           requestAnimationFrame(() => inputRef.current?.select());
@@ -78,6 +89,7 @@ export function AnswerForm({
         break;
       case "refused":
         setMessage(outcome.error);
+        requestAnimationFrame(() => inputRef.current?.focus());
         break;
       case "cancelled":
         break;
@@ -85,45 +97,48 @@ export function AnswerForm({
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
-      {/* The section heading ("Your answer") labels the field visually. */}
-      <label htmlFor={id} className="sr-only">
-        Your answer
-      </label>
-      {attemptsHint ? (
-        <p id={`${id}-hint`} className="-mt-1 text-sm text-ink-2">
-          {attemptsHint}
-        </p>
-      ) : null}
-      <Input
-        id={id}
-        ref={inputRef}
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          if (message) setMessage(null);
-        }}
-        aria-invalid={message ? true : undefined}
-        aria-describedby={
-          [attemptsHint ? `${id}-hint` : null, message ? `${id}-error` : null].filter(Boolean).join(" ") || undefined
-        }
-        maxLength={500}
-        autoComplete="off"
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        enterKeyHint="send"
-        disabled={busy}
-        className="h-14 text-lg"
-      />
-      {message ? (
-        <p id={`${id}-error`} role="alert" className="text-sm font-medium text-danger">
-          {message}
-        </p>
-      ) : null}
-      <Button type="submit" size="lg" pending={busy} className="w-full sm:w-auto sm:self-start">
-        {task.autoChecked ? "Check answer" : "Send answer"}
-      </Button>
+    <form onSubmit={onSubmit} noValidate>
+      <p id={`${id}-hint`} className="text-ink-2">
+        {hint}
+      </p>
+      <ActionBar>
+        {/* The section heading ("Your answer") labels the field visually. */}
+        <label htmlFor={id} className="sr-only">
+          Your answer
+        </label>
+        {message ? (
+          <p id={`${id}-error`} role="alert" className="mb-2 text-sm font-medium text-danger">
+            {message}
+          </p>
+        ) : null}
+        <div className="flex gap-2">
+          <Input
+            id={id}
+            ref={inputRef}
+            value={value}
+            onChange={(e) => {
+              setValue(e.target.value);
+              if (message) setMessage(null);
+            }}
+            aria-invalid={message ? true : undefined}
+            aria-describedby={message ? `${id}-error ${id}-hint` : `${id}-hint`}
+            // Stays focusable (unlike disabled) while the answer is checked, so focus isn't lost.
+            readOnly={busy}
+            aria-busy={busy || undefined}
+            placeholder="Type your answer"
+            maxLength={500}
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            enterKeyHint="send"
+            className="h-14 min-w-0 flex-1 text-lg"
+          />
+          <Button type="submit" size="lg" pending={busy} className="px-5">
+            {task.autoChecked ? "Check answer" : "Send answer"}
+          </Button>
+        </div>
+      </ActionBar>
     </form>
   );
 }

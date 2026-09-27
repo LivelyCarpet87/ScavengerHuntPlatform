@@ -11,8 +11,10 @@ import { normalizeCode } from "@/lib/ids";
 import type { TeamColor } from "@/lib/palette";
 import { createTeam, type JoinTeamState, joinTeam } from "@/lib/player/actions";
 import { PLAYER_NAME_MAX, sanitizeCodeTyping, TEAM_NAME_MAX } from "@/lib/player/join";
+import type { LeavingOutcome } from "@/lib/player/queries";
 import { cn } from "@/lib/utils";
 import { formSummary, useFocusFirstError } from "./form-feedback";
+import { leavingNote } from "./leaving-note";
 import { ColorPicker, EmojiPicker, TeamPreview } from "./team-look-picker";
 
 /** Name fields hold a few words: keep them a comfortable width on wide screens. */
@@ -40,6 +42,7 @@ function ActionBar({
 }) {
   return (
     <div
+      data-bottom-bar={sticky ? "" : undefined}
       className={cn(
         "flex flex-col gap-3",
         sticky &&
@@ -61,13 +64,11 @@ export function StartTeamForm({
   huntId,
   look,
   huntCode,
-  maxTeamSize,
   next,
 }: {
   huntId: string;
   look: { emoji: string; color: TeamColor };
   huntCode: HuntCodeMode;
-  maxTeamSize: number | null;
   next: string | null;
 }) {
   const [state, action] = useActionState<ActionState, FormData>(createTeam, null);
@@ -173,9 +174,6 @@ export function StartTeamForm({
         <SubmitButton size="lg" className="w-full sm:w-auto sm:self-start" pendingLabel="Creating team">
           Create team
         </SubmitButton>
-        {maxTeamSize ? (
-          <p className="hidden text-sm text-ink-2 sm:block">Teams in this hunt have up to {maxTeamSize} players.</p>
-        ) : null}
       </ActionBar>
     </form>
   );
@@ -191,6 +189,7 @@ export function JoinTeamForm({
   next,
   team,
   currentTeamName,
+  currentTeamOutcome = "stays",
   defaultCode,
   defaultName,
   submitLabel = "Join team",
@@ -200,6 +199,8 @@ export function JoinTeamForm({
   team?: { code: string; name: string } | null;
   /** The device's current team in this hunt, if any. */
   currentTeamName?: string | null;
+  /** What happens to the current team when this device moves off it. */
+  currentTeamOutcome?: LeavingOutcome;
   defaultCode?: string;
   /** The name this device already plays under in the hunt (when moving teams). */
   defaultName?: string | null;
@@ -216,6 +217,7 @@ export function JoinTeamForm({
   // On an invite link we already know both teams, so the move is confirmed up front.
   const moveFrom = team && currentTeamName ? currentTeamName : asked?.from;
   const moveTo = team && currentTeamName ? team.name : asked?.to;
+  const fromOutcome = team && currentTeamName ? currentTeamOutcome : (asked?.fromOutcome ?? "stays");
   const confirming = !!moveFrom && !!moveTo;
 
   return (
@@ -276,7 +278,7 @@ export function JoinTeamForm({
           icon={<ArrowLeftRight className="size-4" />}
           title={`You’re on ${moveFrom} on this device`}
         >
-          Joining {moveTo} moves you off {moveFrom}. {moveFrom} keeps everything it has scored.
+          Joining {moveTo} moves you off {moveFrom}. {leavingNote(moveFrom, fromOutcome)}
         </Notice>
       ) : null}
 

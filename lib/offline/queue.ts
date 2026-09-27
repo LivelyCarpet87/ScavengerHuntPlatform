@@ -15,6 +15,13 @@
  *         if (e.tag === QUEUE_SYNC_TAG)
  *           e.waitUntil(flushQueue().then((r) => { if (r.remaining > 0) throw new Error("retry later"); }));
  *       });
+ *     Only one context sends at a time (a Web Lock). A page that finds another
+ *     one sending leaves it to them; the service worker waits its turn instead,
+ *     so a sync event only fails when something is really still waiting.
+ *
+ * Each item remembers the team it was made for and when, so the server can
+ * refuse it for a different team and still accept it shortly after the task
+ * closed if it was made while open (see LATE_GRACE_MS in lib/player/submit.ts).
  *
  * Every change is announced on BroadcastChannel("shp-queue"), so all tabs and
  * the service worker stay in step (see onQueueChange / onQueueEvent).
@@ -30,6 +37,8 @@ export type QueuedSubmission = {
   clientId: string;
   huntId: string;
   taskId: string;
+  /** The team it was made for; the server refuses it once the phone is on another team. */
+  teamId?: string | null;
   text?: string | null;
   files: QueuedFile[];
   poster?: QueuedFile | null;
@@ -41,13 +50,15 @@ export type QueuedSubmission = {
   state: "queued" | "sending" | "failed";
   /** Last non-retryable error message (state "failed"). */
   error?: string | null;
+  /** The server's code for that refusal, if it gave one (e.g. "team_changed", which no retry fixes). */
+  errorCode?: string | null;
   /** What it is, for the waiting-uploads list, e.g. "2 photos for The red door". */
   label?: string | null;
   /** When the last send attempt ended (ms). */
   lastAttemptAt?: number | null;
 };
 
-export type NewQueuedSubmission = Omit<QueuedSubmission, "attempts" | "state" | "error" | "createdAt">;
+export type NewQueuedSubmission = Omit<QueuedSubmission, "attempts" | "state" | "error" | "errorCode" | "createdAt">;
 
 /** What the server said about a queued submission once it was accepted. */
 export type SentResult = {
@@ -66,6 +77,8 @@ export type QueueEvent =
       label: string | null;
       result: SentResult | null;
     }
+  /** Nothing left to send: the team already has the task (a teammate got there first). The item is gone. */
+  | { type: "already"; clientId: string; huntId: string; taskId: string; label: string | null }
   | { type: "failed"; clientId: string; huntId: string; taskId: string; label: string | null; error: string };
 
 const DB_NAME = "shp-offline";
@@ -84,7 +97,7 @@ function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   const opening = new Promise<IDBDatabase>((resolve, reject) => {
     if (typeof indexedDB === "undefined") {
-      reject(new Error("This browser can't save uploads for later."));
+      reject(new Error("This browser can’t save uploads for later."));
       return;
     }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -104,7 +117,7 @@ function openDb(): Promise<IDBDatabase> {
       };
       resolve(db);
     };
-    req.onerror = () => reject(req.error ?? new Error("Couldn't open the upload queue."));
+    req.onerror = () => reject(req.error ?? new Error("Couldn’t open the upload queue."));
   });
   dbPromise = opening;
   opening.catch(() => {
@@ -214,6 +227,7 @@ export async function enqueueSubmission(item: NewQueuedSubmission): Promise<void
     attempts: 0,
     state: "queued",
     error: null,
+    errorCode: null,
     lastAttemptAt: null,
   };
   await inStore("readwrite", (store) => store.put(record));
@@ -234,24 +248,32 @@ export async function removeQueued(clientId: string): Promise<void> {
 
 /** Puts a failed submission back in line (after the player fixed the problem or wants another go). */
 export async function retryQueued(clientId: string): Promise<void> {
-  await updateItem(clientId, { state: "queued", error: null });
+  await updateItem(clientId, { state: "queued", error: null, errorCode: null });
   emit({ type: "changed" });
 }
 
-/** The same multipart body the task page sends (see POST /api/hunts/[huntId]/submissions). */
+/**
+ * The same multipart body the task page sends (see POST /api/hunts/[huntId]/submissions).
+ * A queued item (with `createdAt`) also says how long it has been waiting.
+ */
 export function buildSubmissionForm(item: {
   clientId: string;
   taskId: string;
+  teamId?: string | null;
   text?: string | null;
   files: QueuedFile[];
   poster?: QueuedFile | null;
   lat?: number | null;
   lng?: number | null;
   accuracy?: number | null;
+  createdAt?: number;
 }): FormData {
   const form = new FormData();
   form.set("taskId", item.taskId);
   form.set("clientId", item.clientId);
+  if (item.teamId) form.set("teamId", item.teamId);
+  // Measured on this phone's own clock, so a phone set to the wrong time still reports it right.
+  if (item.createdAt != null) form.set("queuedFor", String(Math.max(0, Date.now() - item.createdAt)));
   if (item.text) form.set("text", item.text);
   for (const file of item.files) form.append("files", asTypedBlob(file), file.name);
   if (item.poster) form.set("poster", asTypedBlob(item.poster), item.poster.name);
@@ -281,9 +303,18 @@ export function flushQueue(): Promise<Counts> {
   return inFlight;
 }
 
+/** Whether this code runs in the service worker (Background Sync) rather than a page. */
+function inServiceWorker(): boolean {
+  const scope = (globalThis as { ServiceWorkerGlobalScope?: new () => unknown }).ServiceWorkerGlobalScope;
+  return typeof scope === "function" && globalThis instanceof scope;
+}
+
 async function runExclusive(): Promise<Counts> {
   const locks = (globalThis.navigator as { locks?: LockManager } | undefined)?.locks;
   if (locks?.request) {
+    // A sync event that gave up because a page was busy sending would count as a failed
+    // sync (and the browser only retries a few times), so the service worker waits its turn.
+    if (inServiceWorker()) return locks.request(LOCK, () => flushOnce());
     let counts: Counts | null = null;
     await locks.request(LOCK, { ifAvailable: true }, async (lock) => {
       // Another tab or the service worker is already sending; report where things stand.
@@ -302,12 +333,16 @@ async function remainingCount(): Promise<number> {
   }
 }
 
+type Refusal = { error: string; code: string | null };
+
 /** The server's reason for turning an upload down, or null when the reply isn't from our server. */
-async function readRefusal(res: Response): Promise<string | null> {
+async function readRefusal(res: Response): Promise<Refusal | null> {
   if (res.redirected) return null;
   try {
-    const body = (await res.json()) as { ok?: unknown; error?: unknown };
-    if (body.ok === false && typeof body.error === "string" && body.error) return body.error;
+    const body = (await res.json()) as { ok?: unknown; error?: unknown; code?: unknown };
+    if (body.ok === false && typeof body.error === "string" && body.error) {
+      return { error: body.error, code: typeof body.code === "string" ? body.code : null };
+    }
   } catch {
     // Not JSON: a proxy or login page answered, not the hunt.
   }
@@ -355,13 +390,26 @@ async function flushOnce(): Promise<Counts> {
       break;
     }
     const reply = res.ok ? await readReply(res) : null;
-    const refusal =
+    const refusal: Refusal | null =
       !reply && res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
         ? ((await readRefusal(res)) ??
           // A proxy's "too large" is as final as ours.
-          (res.status === 413 ? "That's too much to send at once. Send fewer or smaller files." : null))
+          (res.status === 413
+            ? { error: "That’s too much to send at once. Send fewer or smaller files.", code: null }
+            : null))
         : null;
-    if (reply) {
+    if (refusal?.code === "already_completed") {
+      // A teammate finished the task while this waited: nothing is missing, so it just goes.
+      await inStore("readwrite", (store) => store.delete(item.clientId));
+      sent += 1;
+      emit({
+        type: "already",
+        clientId: item.clientId,
+        huntId: item.huntId,
+        taskId: item.taskId,
+        label: item.label ?? null,
+      });
+    } else if (reply) {
       const { result } = reply;
       await inStore("readwrite", (store) => store.delete(item.clientId));
       sent += 1;
@@ -374,10 +422,11 @@ async function flushOnce(): Promise<Counts> {
         result,
       });
     } else if (refusal) {
-      const error = refusal;
+      const { error, code } = refusal;
       await updateItem(item.clientId, {
         state: "failed",
         error,
+        errorCode: code,
         attempts: item.attempts + 1,
         lastAttemptAt: Date.now(),
       });

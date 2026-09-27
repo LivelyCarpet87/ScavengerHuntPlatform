@@ -92,6 +92,17 @@ describe("players", () => {
 });
 
 describe("staff", () => {
+  test("a judge invited to one hunt can't create hunts", async () => {
+    const context = await contextAs("judge");
+    const page = await context.newPage();
+    const problems = watchProblems(page);
+    await page.goto("/dashboard/new");
+    await page.getByRole("heading", { name: "Creating hunts needs organizer access" }).waitFor({ timeout: 10_000 });
+    expect(await page.getByRole("button", { name: "Create hunt" }).count()).toBe(0);
+    expect(problems).toEqual([]);
+    await context.close();
+  });
+
   test("a judge approves a pending photo from the queue", async () => {
     const huntId = await liveHuntId();
     // A photo task (contest entries need a measured value before they can be approved).
@@ -121,6 +132,22 @@ describe("staff", () => {
       status = row?.status ?? "missing";
     }
     expect(status).toBe("approved");
+    expect(problems).toEqual([]);
+    await context.close();
+  });
+
+  test("on a phone, the staff menu opens full height and reaches every section", async () => {
+    const huntId = await liveHuntId();
+    const context = await contextAs("admin", { mobile: true });
+    const page = await context.newPage();
+    const problems = watchProblems(page);
+    await page.goto(`/manage/${huntId}`);
+    await page.getByRole("button", { name: /^Open menu/ }).tap();
+    const menu = page.getByRole("dialog", { name: "Menu" });
+    await menu.waitFor({ timeout: 10_000 });
+    expect((await menu.boundingBox())?.height ?? 0).toBeGreaterThan(700);
+    await menu.getByRole("link", { name: "Announcements" }).tap();
+    await page.waitForURL(new RegExp(`/manage/${huntId}/announcements$`), { timeout: 15_000 });
     expect(problems).toEqual([]);
     await context.close();
   });

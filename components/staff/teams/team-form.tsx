@@ -1,107 +1,101 @@
 "use client";
 
-import { useId, useState } from "react";
+import { Pencil } from "lucide-react";
+import { useState } from "react";
+import { ColorPicker, EmojiPicker, TeamPreview } from "@/components/join/team-look-picker";
 import { Button } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Switch } from "@/components/ui/field";
 import { FormMessage, fieldError } from "@/components/ui/form";
-import { TeamAvatar } from "@/components/ui/team-badge";
-import { TEAM_COLOR_KEYS, TEAM_COLORS, TEAM_EMOJI, teamColorHex } from "@/lib/palette";
+import { toast } from "@/components/ui/toast";
+import { TEAM_EMOJI } from "@/lib/palette";
 import { formLevel } from "@/lib/staff/forms";
 import { updateTeamAction } from "@/lib/staff/team-actions";
-import { cn } from "@/lib/utils";
 import { useActionForm } from "../use-action-form";
 
-/** Name, emoji, color and visibility of a team, with a live avatar preview. */
-export function TeamForm({
-  huntId,
-  team,
-}: {
-  huntId: string;
-  team: { id: string; name: string; emoji: string; color: string; hidden: boolean };
-}) {
-  const ids = useId();
+type TeamLook = { id: string; name: string; emoji: string; color: string; hidden: boolean };
+
+/**
+ * "Edit team" for organizers: the same name, emoji and color controls players
+ * see in their own Edit team sheet (so both look alike), plus hiding the team
+ * from the scoreboard. Every opening starts from the saved team.
+ */
+export function TeamEditButton({ huntId, team }: { huntId: string; team: TeamLook }) {
+  const [open, setOpen] = useState(false);
+  const [round, setRound] = useState(0);
+  return (
+    <>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => {
+          setRound((r) => r + 1);
+          setOpen(true);
+        }}
+      >
+        <Pencil aria-hidden />
+        Edit team
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Edit team"
+        description="Changes show on the scoreboard and on players’ phones straight away."
+      >
+        {open ? <TeamForm key={round} huntId={huntId} team={team} onDone={() => setOpen(false)} /> : null}
+      </Dialog>
+    </>
+  );
+}
+
+function TeamForm({ huntId, team, onDone }: { huntId: string; team: TeamLook; onDone: () => void }) {
   const [name, setName] = useState(team.name);
   const [emoji, setEmoji] = useState(team.emoji);
   const [color, setColor] = useState(team.color);
-  const { state, pending, onSubmit, formRef } = useActionForm(updateTeamAction);
-  const emojiChoices = TEAM_EMOJI.includes(team.emoji) ? TEAM_EMOJI : [team.emoji, ...TEAM_EMOJI];
+  const { state, pending, onSubmit, formRef } = useActionForm(updateTeamAction, {
+    onSuccess: (s) => {
+      if (s?.ok) toast({ title: s.message ?? "Team saved.", tone: "success" });
+      onDone();
+    },
+  });
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="flex flex-col gap-5">
+    <form ref={formRef} onSubmit={onSubmit} className="flex flex-col gap-6 pb-2" noValidate>
       <input type="hidden" name="huntId" value={huntId} />
       <input type="hidden" name="teamId" value={team.id} />
-      <div className="flex items-center gap-4">
-        <TeamAvatar team={{ name, emoji, color }} size="lg" />
-        <Field label="Team name" error={fieldError(state, "name")} className="flex-1">
-          {(p) => (
-            <Input {...p} name="name" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} required />
-          )}
-        </Field>
-      </div>
-
-      <fieldset>
-        <legend className="text-sm font-semibold">Emoji</legend>
-        <div className="mt-2 grid grid-cols-6 gap-1.5 sm:grid-cols-10 lg:grid-cols-6">
-          {emojiChoices.map((e) => (
-            <label
-              key={e}
-              htmlFor={`${ids}-e-${e}`}
-              className="grid aspect-square cursor-pointer place-items-center rounded-md text-2xl hover:bg-mist has-checked:bg-accent-wash has-checked:shadow-[inset_0_0_0_2px_var(--accent)] has-focus-visible:outline-3 has-focus-visible:outline-overprint"
-            >
-              <input
-                id={`${ids}-e-${e}`}
-                type="radio"
-                name="emoji"
-                value={e}
-                checked={emoji === e}
-                onChange={() => setEmoji(e)}
-                className="sr-only"
-              />
-              {e}
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend className="text-sm font-semibold">Color</legend>
-        <div className="mt-2 grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-4">
-          {TEAM_COLOR_KEYS.map((key) => (
-            <label
-              key={key}
-              htmlFor={`${ids}-c-${key}`}
-              className={cn(
-                "flex h-11 cursor-pointer items-center gap-2 rounded-md px-2 text-sm font-medium text-ink-2 hover:bg-mist",
-                "has-checked:bg-paper has-checked:font-semibold has-checked:text-ink has-checked:shadow-[inset_0_0_0_2px_var(--ink)] has-focus-visible:outline-3 has-focus-visible:outline-overprint",
-              )}
-            >
-              <input
-                id={`${ids}-c-${key}`}
-                type="radio"
-                name="color"
-                value={key}
-                checked={color === key}
-                onChange={() => setColor(key)}
-                className="sr-only"
-              />
-              <span aria-hidden className="size-5 shrink-0 rounded-full" style={{ background: teamColorHex(key) }} />
-              <span className="truncate">{TEAM_COLORS[key].label}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
-
+      {/* An emoji from outside today's list (an older team) is kept until another one is picked. */}
+      {TEAM_EMOJI.includes(emoji) ? null : <input type="hidden" name="emoji" value={emoji} />}
+      <TeamPreview name={name} emoji={emoji} color={color} placeholder="Team name" />
+      <Field label="Team name" error={fieldError(state, "name")}>
+        {(p) => (
+          <Input
+            {...p}
+            name="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={32}
+            autoComplete="off"
+            required
+          />
+        )}
+      </Field>
+      <EmojiPicker value={emoji} onChange={setEmoji} error={fieldError(state, "emoji")} />
+      <ColorPicker value={color} onChange={setColor} error={fieldError(state, "color")} />
       <Switch
         name="hidden"
         defaultChecked={team.hidden}
         label="Hide from scoreboard"
         hint="For test runs: the team still scores, but players and the big screen never see it, and it doesn’t affect solve counts or contest places."
       />
-
-      <FormMessage state={formLevel(state, ["name"])} />
-      <Button type="submit" variant="secondary" pending={pending} className="self-start">
-        Save team
-      </Button>
+      <FormMessage state={formLevel(state, ["name", "emoji", "color"])} />
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" size="lg" pending={pending}>
+          {pending ? "Saving" : "Save team"}
+        </Button>
+        <Button variant="ghost" size="lg" onClick={onDone}>
+          Cancel
+        </Button>
+      </div>
     </form>
   );
 }

@@ -49,12 +49,13 @@ export type CardCell = {
   fresh?: boolean;
 };
 
+/** The same words as the task list's control markers, so a task's state reads alike everywhere. */
 const stateLabel: Record<ControlState, string> = {
-  todo: "not done yet",
-  pending: "waiting for review",
+  todo: "to do",
+  pending: "in review",
   approved: "done",
-  rejected: "rejected — try again",
-  locked: "locked",
+  rejected: "not accepted",
+  locked: "closed",
 };
 
 /** The team's control card — a grid of boxes, one per task. */

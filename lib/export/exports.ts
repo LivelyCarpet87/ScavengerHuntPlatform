@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { files, type Hunt, players, submissions, tasks, teams, users } from "@/lib/db/schema";
 import { getStandings } from "@/lib/scoring/service";
 import { fileUrl, variantPath } from "@/lib/storage";
-import { toCsv } from "./csv";
+import { csvTime, toCsv } from "./csv";
 import { mediaEntryNames } from "./names";
 import type { ZipSource } from "./zip";
 
@@ -17,8 +17,11 @@ import type { ZipSource } from "./zip";
 
 const STATUS_WORDS = { pending: "In review", approved: "Accepted", rejected: "Not accepted" } as const;
 
+/** How the hunt's zone is named in column headers, e.g. "submitted at (Asia/Shanghai)". */
+const inZone = (label: string, timeZone: string) => `${label} (${timeZone})`;
+
 /** rank, team, total, task points, contest points, hint penalty, adjustments, solved, last scored at, hidden */
-export async function standingsCsv(hunt: Pick<Hunt, "id">): Promise<string> {
+export async function standingsCsv(hunt: Pick<Hunt, "id" | "timezone">): Promise<string> {
   const standings = await getStandings(hunt.id);
   return toCsv(
     [
@@ -30,7 +33,7 @@ export async function standingsCsv(hunt: Pick<Hunt, "id">): Promise<string> {
       "hint penalty",
       "adjustments",
       "solved",
-      "last scored at",
+      inZone("last scored at", hunt.timezone),
       "hidden",
     ],
     standings.standings.map((s) => [
@@ -42,14 +45,14 @@ export async function standingsCsv(hunt: Pick<Hunt, "id">): Promise<string> {
       s.hintPenalty === 0 ? 0 : -s.hintPenalty,
       s.adjustmentPoints,
       s.solved,
-      s.lastScoredAt != null ? new Date(s.lastScoredAt) : null,
+      csvTime(s.lastScoredAt, hunt.timezone),
       s.hidden,
     ]),
   );
 }
 
 /** One row per submission, oldest first, with absolute links to the original files. */
-export async function submissionsCsv(hunt: Pick<Hunt, "id">, origin: string): Promise<string> {
+export async function submissionsCsv(hunt: Pick<Hunt, "id" | "timezone">, origin: string): Promise<string> {
   const judge = alias(users, "judge");
   const rows = await db
     .select({
@@ -85,7 +88,7 @@ export async function submissionsCsv(hunt: Pick<Hunt, "id">, origin: string): Pr
   return toCsv(
     [
       "id",
-      "submitted at",
+      inZone("submitted at", hunt.timezone),
       "team",
       "sent by",
       "task code",
@@ -97,12 +100,12 @@ export async function submissionsCsv(hunt: Pick<Hunt, "id">, origin: string): Pr
       "text",
       "feedback",
       "judged by",
-      "judged at",
+      inZone("judged at", hunt.timezone),
       "file urls",
     ],
     rows.map(({ sub, teamName, taskCode, taskTitle, judgeName, playerName }) => [
       sub.id,
-      sub.createdAt,
+      csvTime(sub.createdAt, hunt.timezone),
       teamName,
       playerName,
       taskCode,
@@ -114,7 +117,7 @@ export async function submissionsCsv(hunt: Pick<Hunt, "id">, origin: string): Pr
       sub.text,
       sub.feedback,
       sub.autoJudged ? "automatic" : judgeName,
-      sub.judgedAt,
+      csvTime(sub.judgedAt, hunt.timezone),
       (urls.get(sub.id) ?? []).join(" "),
     ]),
   );

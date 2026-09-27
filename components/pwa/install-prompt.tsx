@@ -58,7 +58,7 @@ export function InstallPrompt({ className }: { className?: string }) {
     >
       {/* biome-ignore lint/performance/noImgElement: the app's own icon, shown as it will look on the home screen */}
       <img
-        src="/icons/maskable-512.png"
+        src="/icons/maskable-192.png"
         width={52}
         height={52}
         alt=""

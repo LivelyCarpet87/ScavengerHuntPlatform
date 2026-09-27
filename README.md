@@ -40,7 +40,7 @@ rank changes as they happen and a wall of accepted photos.
 - **Judging queue** with feedback templates, points overrides, auto-accept for low-stakes tasks, and an activity log of every staff action.
 - **Live everything**: the scoreboard, team dashboards, judging queue and announcements update over Server-Sent Events. The scoreboard can freeze before the end for a dramatic reveal.
 - **Big screen** mode for a projector.
-- **Offline uploads**: submissions made without signal are stored on the phone (IndexedDB) and sent automatically when it's back, including through Background Sync after the app is closed. Recently opened pages still open offline.
+- **Offline uploads**: submissions made without signal are stored on the phone (IndexedDB) and sent automatically when it's back, including through Background Sync after the app is closed. Players' recently opened pages still open offline or on a crawling connection, marked as a saved copy until the live page arrives; leaving a team or signing out forgets them on that phone.
 - **Push notifications** for results, announcements and new tasks (Android, desktop, and iPhone once the app is on the Home Screen).
 - **Installable app (PWA)** with its own icon, full-screen display and an in-app update prompt.
 - **Staff accounts** with per-hunt roles (judge, organizer, owner), platform admins, invite-only or open sign-up, and invite links.
@@ -85,6 +85,7 @@ Every setting has a working default. For development put them in `.env.local`
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | *(generated)* | Web Push keys. When unset they're generated on first use and stored in the database. Set them to keep existing push subscriptions working if you ever start from a new database. |
 | `VAPID_SUBJECT` | `mailto:admin@example.com` | Contact address push services can use about delivery problems. Use a real `mailto:` or `https:` address. |
 | `COOKIE_SECURE` | on when `APP_URL` is `https://` | Force Secure cookies on (`true`) or off (`false`). |
+| `TRUSTED_PROXY_HOPS` | `1` | How many proxies in front of the app add to `X-Forwarded-For`; rate limits use the address the outermost one saw. Set `2` for a CDN in front of Caddy or nginx. |
 | `PORT`, `HOSTNAME` | `3000`, all interfaces | Where the server listens. |
 
 Platform settings that change at runtime — who may create organizer accounts,
@@ -139,9 +140,9 @@ computer itself: phones don't trust its self-signed certificate.
   files: allow request bodies of at least 4 × `MAX_UPLOAD_MB` plus a few
   megabytes (about 410 MB with the defaults), and generous read timeouts for
   slow phone connections.
-- **Headers**: pass `Host`, `X-Forwarded-Proto` and `X-Forwarded-For` (set to
-  the client's address, not appended to what the client sent — sign-in rate
-  limits key on it). Or set `APP_URL`.
+- **Headers**: pass `Host`, `X-Forwarded-Proto` and `X-Forwarded-For` (sign-in
+  and join rate limits key on its last entry, so appending proxies are fine;
+  see `TRUSTED_PROXY_HOPS`). Or set `APP_URL`. Don't expose port 3000 directly.
 
 ### Backups
 

@@ -114,7 +114,7 @@ export function RejudgePanel({
         message:
           value == null
             ? `Enter the measured value${task.contestUnit ? ` in ${task.contestUnit}` : ""} to approve.`
-            : "Type the value as a number, like 184 or 18.5.",
+            : "Type the value as a number, like 1500 or 18.5.",
       });
       return;
     }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { GalleryControls } from "@/components/gallery/gallery-controls";
-import { type GalleryGroup, GalleryView } from "@/components/gallery/gallery-view";
+import { GalleryPager } from "@/components/gallery/gallery-pager";
+import { GalleryView } from "@/components/gallery/gallery-view";
 import { RefreshAt } from "@/components/home/refresh-at";
 import { LiveRefresh } from "@/components/live/live-refresh";
 import { ButtonLink } from "@/components/ui/button";
@@ -11,7 +12,8 @@ import type { Hunt } from "@/lib/db/schema";
 import { formatDate, formatDateTime, formatTime, plural } from "@/lib/format";
 import { canViewGallery, getHuntBySlug, huntPhase } from "@/lib/hunts";
 import { loadGallery } from "@/lib/live/gallery";
-import { describeMedia, type GalleryItem } from "@/lib/live/types";
+import { galleryPage, groupGallery, parsePage } from "@/lib/live/gallery-groups";
+import { describeMedia } from "@/lib/live/types";
 import { links } from "@/lib/url";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -19,24 +21,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const hunt = await getHuntBySlug(slug);
   if (!hunt || hunt.status === "draft") return {};
   return { title: `${hunt.name} photos` };
-}
-
-function groupItems(items: GalleryItem[], by: "task" | "team"): GalleryGroup[] {
-  const groups = new Map<string, GalleryGroup>();
-  for (const item of items) {
-    const key = by === "task" ? item.task.id : item.team.id;
-    let group = groups.get(key);
-    if (!group) {
-      group = by === "task" ? { key, by, task: item.task, items: [] } : { key, by, team: item.team, items: [] };
-      groups.set(key, group);
-    }
-    group.items.push(item);
-  }
-  const list = [...groups.values()];
-  // Tasks keep the organizers' order (the query's); teams go alphabetically.
-  const name = (g: GalleryGroup) => (g.by === "team" ? g.team.name : "");
-  if (by === "team") list.sort((a, b) => name(a).localeCompare(name(b)));
-  return list;
 }
 
 export default async function GalleryPage({
@@ -53,6 +37,7 @@ export default async function GalleryPage({
   const open = canViewGallery(hunt, viewer, now);
   const by = query.by === "team" ? "team" : "task";
   const mine = !!me && query.mine === "1";
+  const requestedPage = parsePage(query.page);
   const basePath = `/h/${hunt.slug}/gallery`;
   // The gallery opens by itself at the finish (a timer, plus hunt.changed for schedule edits); only
   // viewers allowed on the event stream listen to it.
@@ -66,8 +51,9 @@ export default async function GalleryPage({
   );
 
   if (!open) {
-    // Players still see their own team's accepted photos while the gallery is closed.
+    // Players still see their own team's accepted photos while everyone else's are closed.
     const own = me ? await loadGallery(hunt, viewer, { onlyTeamId: me.team.id, now }) : [];
+    const shown = galleryPage(groupGallery(own, "task"), requestedPage);
     return (
       <div className="flex flex-col gap-8">
         {live}
@@ -76,9 +62,14 @@ export default async function GalleryPage({
           <section className="flex flex-col gap-5 border-t border-line pt-6">
             <div>
               <h2 className="font-cond text-2xl font-bold">Your team’s photos so far</h2>
-              <p className="text-ink-2">Only your team can see these until the gallery opens.</p>
+              <p className="text-ink-2">
+                {hunt.galleryMode === "off"
+                  ? "Only your team and the judges see these."
+                  : "Only your team can see these until the hunt ends."}
+              </p>
             </div>
-            <GalleryView groups={groupItems(own, "task")} timezone={hunt.timezone} />
+            <GalleryView groups={shown.groups} timezone={hunt.timezone} />
+            <GalleryPager basePath={basePath} page={shown.page} pages={shown.pages} />
           </section>
         ) : null}
       </div>
@@ -88,6 +79,8 @@ export default async function GalleryPage({
   const items = await loadGallery(hunt, viewer, { onlyTeamId: mine ? me?.team.id : null, now });
   const phase = huntPhase(hunt, now);
   const teams = new Set(items.map((i) => i.team.id)).size;
+  // A big hunt comes a page at a time: phones never load every photo of the event at once.
+  const shown = galleryPage(groupGallery(items, by), requestedPage);
 
   return (
     <div className="flex flex-col gap-6">
@@ -101,6 +94,7 @@ export default async function GalleryPage({
           {items.length === 0
             ? "Every accepted photo and video from the hunt."
             : `${describeMedia(items, "accepted")} from ${mine ? "your team" : plural(teams, "team")}.`}
+          {shown.pages > 1 ? ` Page ${shown.page} of ${shown.pages}.` : null}
         </p>
       </header>
 
@@ -122,7 +116,10 @@ export default async function GalleryPage({
             : "Accepted photos and videos show up here as judges approve them."}
         </EmptyState>
       ) : (
-        <GalleryView groups={groupItems(items, by)} timezone={hunt.timezone} />
+        <>
+          <GalleryView groups={shown.groups} timezone={hunt.timezone} />
+          <GalleryPager basePath={basePath} by={by} mine={mine} page={shown.page} pages={shown.pages} />
+        </>
       )}
     </div>
   );
@@ -137,7 +134,7 @@ function ClosedGallery({
 }) {
   if (hunt.galleryMode === "off") {
     return (
-      <EmptyState title="This hunt has no photo gallery">
+      <EmptyState title="This hunt doesn’t share photos">
         The organizers keep each team’s photos private. Judges still see everything you send.
       </EmptyState>
     );
@@ -145,17 +142,17 @@ function ClosedGallery({
   if (isVisitor && hunt.scoreboardVisibility !== "public") {
     return (
       <EmptyState
-        title="The gallery is for teams in this hunt"
+        title="Photos are for teams in this hunt"
         action={<ButtonLink href={links.hunt(hunt.slug)}>Join this hunt</ButtonLink>}
       >
-        Join a team to see everyone’s photos when the gallery opens.
+        Join a team to see everyone’s photos when they open.
       </EmptyState>
     );
   }
   const endsAt = hunt.endsAt;
   const sameDay = endsAt && formatDate(endsAt, hunt.timezone) === formatDate(new Date(), hunt.timezone);
   return (
-    <EmptyState title="The gallery opens when the hunt ends">
+    <EmptyState title="Photos open when the hunt ends">
       {endsAt
         ? `Every accepted photo and video appears here at ${sameDay ? formatTime(endsAt, hunt.timezone) : formatDateTime(endsAt, hunt.timezone)}.`
         : "Every accepted photo and video appears here once the organizers end the hunt."}

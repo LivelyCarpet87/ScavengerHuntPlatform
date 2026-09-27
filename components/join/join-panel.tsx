@@ -6,6 +6,7 @@ import { Segmented } from "@/components/ui/choice";
 import { Notice } from "@/components/ui/misc";
 import type { TeamColor } from "@/lib/palette";
 import type { JoinPolicy } from "@/lib/player/join";
+import { useFormerTeam } from "./device-team";
 import { type HuntCodeMode, JoinTeamForm, StartTeamForm } from "./join-forms";
 
 type Mode = "start" | "join";
@@ -17,7 +18,11 @@ function nextNote(next: string): string {
   return "Join a team first. You’ll go straight back to where you were.";
 }
 
-/** "Start a team" or "Join a team", as the hunt's registration rules allow. */
+/**
+ * "Start a team" or "Join a team", as the hunt's registration rules allow.
+ * A phone that was on a team until it was signed out or taken off (see
+ * FormerTeamNotice) opens on "Join a team": getting back beats starting over.
+ */
 export function JoinPanel({
   huntId,
   policy,
@@ -34,7 +39,10 @@ export function JoinPanel({
   next: string | null;
 }) {
   const both = policy.canCreateTeam && policy.canJoinTeam;
-  const [mode, setMode] = useState<Mode>(policy.canCreateTeam ? "start" : "join");
+  const former = useFormerTeam(huntId);
+  const [picked, setPicked] = useState<Mode | null>(null);
+  const mode: Mode = picked ?? (policy.canCreateTeam && !former ? "start" : "join");
+  const sizeNote = maxTeamSize ? ` Teams in this hunt have up to ${maxTeamSize} players.` : "";
 
   return (
     <section aria-labelledby="join-heading" className="flex flex-col gap-5">
@@ -46,6 +54,7 @@ export function JoinPanel({
           {both
             ? "Start a team and invite your friends, or join a team that’s already set up."
             : "Join your team with the code your captain shares."}
+          {sizeNote}
         </p>
       </div>
       {/* Deeper than the hunt home: say why the page asks to join first. */}
@@ -61,9 +70,12 @@ export function JoinPanel({
       ) : null}
       {both ? (
         <Segmented
+          // Remounts once when the device's former team is read after hydration, to open on "Join a team".
+          key={former ? "former" : "fresh"}
           name="join-mode"
+          label="How do you want to join?"
           defaultValue={mode}
-          onChange={(v) => setMode(v as Mode)}
+          onChange={(v) => setPicked(v as Mode)}
           className="grid w-full grid-cols-2 sm:max-w-sm"
           options={[
             { value: "start", label: "Start a team" },
@@ -73,7 +85,7 @@ export function JoinPanel({
       ) : null}
       {!policy.canCreateTeam && policy.createNote ? <Notice tone="info">{policy.createNote}</Notice> : null}
       {mode === "start" && policy.canCreateTeam ? (
-        <StartTeamForm huntId={huntId} look={look} huntCode={huntCode} maxTeamSize={maxTeamSize} next={next} />
+        <StartTeamForm huntId={huntId} look={look} huntCode={huntCode} next={next} />
       ) : (
         <JoinTeamForm huntId={huntId} next={next} />
       )}

@@ -23,15 +23,15 @@ export type SubmissionReply = {
 
 export type SendOutcome =
   | { kind: "done"; reply: SubmissionReply }
-  /** The server refused it (4xx): show the message, don't retry as-is. */
-  | { kind: "refused"; status: number; error: string }
+  /** The server refused it (4xx): show the message, don't retry as-is. `code`: see SubmitFailureCode. */
+  | { kind: "refused"; status: number; error: string; code?: string }
   /** Network trouble, a timeout, 429 or 5xx: worth trying again later. */
   | { kind: "retry"; status: number; error: string | null }
   | { kind: "cancelled" };
 
 export type Progress = { loaded: number; total: number };
 
-const TOO_BIG = "That's too much to send at once. Send fewer or smaller files.";
+const TOO_BIG = "That’s too much to send at once. Send fewer or smaller files.";
 
 /** No upload progress for this long means the connection has stalled. */
 const STALL_MS = 45_000;
@@ -68,7 +68,7 @@ export function sendSubmission(opts: {
     xhr.onload = () => {
       clearTimeout(timer);
       const status = xhr.status;
-      let body: { ok?: boolean; error?: unknown } | null = null;
+      let body: { ok?: boolean; error?: unknown; code?: unknown } | null = null;
       try {
         body = JSON.parse(xhr.responseText);
       } catch {
@@ -88,7 +88,7 @@ export function sendSubmission(opts: {
         body?.ok === false &&
         error
       ) {
-        resolve({ kind: "refused", status, error });
+        resolve({ kind: "refused", status, error, ...(typeof body.code === "string" ? { code: body.code } : {}) });
       } else if (status === 413) {
         // Too big for the server, or a proxy in front of it: retrying won't help.
         resolve({ kind: "refused", status, error: error ?? TOO_BIG });
@@ -136,7 +136,7 @@ export async function saveForLater(item: NewQueuedSubmission): Promise<void> {
     throw new Error(
       quota
         ? "This phone is out of storage for saving uploads. Free up some space, or try again when you have signal."
-        : "This browser couldn't save the upload for later. Try again when you have signal.",
+        : "This browser couldn’t save the upload for later. Try again when you have signal.",
     );
   }
   void requestBackgroundSync();

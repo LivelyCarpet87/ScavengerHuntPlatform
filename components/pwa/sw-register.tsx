@@ -1,7 +1,7 @@
 "use client";
 
 import { RotateCw, X } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { requestBackgroundSync } from "@/lib/offline/background-sync";
@@ -21,6 +21,11 @@ const KIOSK = /^\/h\/[^/]+\/screen(\/|$)/;
 /** Activates a waiting worker; the page reloads once it takes control. */
 function activate(worker: ServiceWorker, reloadRequested: { current: boolean }) {
   reloadRequested.current = true;
+  // Another tab already switched to it: this page just needs to load the new version.
+  if (worker.state === "activated" || navigator.serviceWorker.controller === worker) {
+    window.location.reload();
+    return;
+  }
   worker.postMessage({ type: "SKIP_WAITING" });
   // If the new worker had already taken over from another tab, controllerchange won't fire here.
   setTimeout(() => window.location.reload(), 4000);
@@ -38,14 +43,17 @@ async function syncIfQueued() {
  * Registers the service worker (built from sw/ into /sw.js) in production, or
  * in development when localStorage "sw-dev" is set. When a new version has
  * installed and is waiting, offers "Reload", which activates it (SKIP_WAITING)
- * and reloads once it has taken over. Also asks for a Background Sync when the
- * phone comes back online with submissions still queued.
+ * and reloads once it has taken over; the offer goes away in every tab once the
+ * update is active. Also asks for a Background Sync when the phone comes back
+ * online with submissions still queued, and moves to the page a notification
+ * tap asks for (message OPEN) in-app, so an upload in progress keeps going.
  */
 export function ServiceWorkerRegistrar() {
   const [waiting, setWaiting] = useState<ServiceWorker | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const reloadRequested = useRef(false);
   const pathname = usePathname();
+  const router = useRouter();
   const kiosk = KIOSK.test(pathname ?? "");
 
   useEffect(() => {
@@ -98,6 +106,32 @@ export function ServiceWorkerRegistrar() {
       clearInterval(timer);
     };
   }, []);
+
+  // The waiting version stops waiting once it's activated (possibly from another tab's
+  // "Reload") or replaced by a newer one: stop offering it.
+  useEffect(() => {
+    if (!waiting) return;
+    const onState = () => {
+      if (waiting.state === "activated" || waiting.state === "redundant") setWaiting(null);
+    };
+    waiting.addEventListener("statechange", onState);
+    onState();
+    return () => waiting.removeEventListener("statechange", onState);
+  }, [waiting]);
+
+  // A notification tap asks the open app to show a page: go there in-app and say so.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: unknown } | null;
+      if (data?.type !== "OPEN" || typeof data.url !== "string" || !/^\/(?![/\\])/.test(data.url)) return;
+      event.ports[0]?.postMessage({ ok: true });
+      router.push(data.url);
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    navigator.serviceWorker.startMessages();
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
+  }, [router]);
 
   useEffect(() => {
     if (waiting && kiosk) activate(waiting, reloadRequested);

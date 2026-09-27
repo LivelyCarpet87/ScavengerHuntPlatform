@@ -1,17 +1,19 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, notLike } from "drizzle-orm";
 import { fileTypeFromBuffer } from "file-type";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { db } from "@/lib/db";
 import { type FileRow, files } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { newId } from "@/lib/ids";
+import { canStripMetadata, stripMetadata } from "@/lib/strip-metadata";
 
 /*
  * Uploaded files live on disk under DATA_DIR/uploads/<huntId>/<fileId>/:
- *   original.<ext>   exactly what was uploaded (validated by magic bytes)
+ *   original.<ext>   what was uploaded (validated by magic bytes); photos and
+ *                    videos without their EXIF/GPS, XMP and container tags
  *   display.webp     images: ≤1600px, EXIF-rotated — what the UI shows
  *   thumb.webp       images: ≤480px — lists, queues, galleries
  *   poster.webp      videos: a frame captured on the device before upload
@@ -21,6 +23,47 @@ import { newId } from "@/lib/ids";
 
 export type UploadKind = FileRow["kind"];
 export type Variant = "original" | "display" | "thumb" | "poster";
+
+/**
+ * Marker in files.variants: the original no longer carries metadata that could
+ * reveal where, when or with what device it was made. Only clean originals of
+ * submissions are shared beyond staff and the team (see lib/files-access.ts).
+ */
+export const CLEAN = "clean";
+
+export function isClean(file: Pick<FileRow, "variants">): boolean {
+  return file.variants.includes(CLEAN);
+}
+
+/** Output formats for photos that can only be cleaned by re-encoding (e.g. a PNG whose EXIF says "rotate"). */
+const REENCODE: Record<string, (img: Sharp) => Sharp> = {
+  "image/jpeg": (img) => img.jpeg({ quality: 92, mozjpeg: true }),
+  "image/png": (img) => img.png(),
+  "image/webp": (img) => img.webp({ quality: 92 }),
+  "image/gif": (img) => img.gif(),
+  "image/tiff": (img) => img.tiff(),
+  "image/avif": (img) => img.avif(),
+};
+
+/**
+ * Photo or video bytes without identifying metadata, or null when the format
+ * can't be cleaned. Lossless where the format allows (lib/strip-metadata.ts);
+ * otherwise photos sharp can decode are re-encoded, which drops all metadata
+ * except the color profile.
+ */
+async function withoutMetadata(buffer: Buffer, mime: string): Promise<Buffer | null> {
+  const stripped = stripMetadata(buffer, mime);
+  if (stripped) return stripped;
+  const encode = REENCODE[mime];
+  if (!encode) return null;
+  try {
+    const { pages = 1 } = await sharp(buffer, { failOn: "none" }).metadata();
+    const img = sharp(buffer, { failOn: "none", animated: pages > 1 }).keepIccProfile();
+    return await encode(pages > 1 ? img : img.autoOrient()).toBuffer();
+  } catch {
+    return null;
+  }
+}
 
 export class UploadError extends Error {
   constructor(message: string) {
@@ -79,6 +122,11 @@ export async function storeUpload(input: StoreUploadInput): Promise<FileRow> {
     throw new UploadError(`That file type isn't supported here. Upload a ${wanted}.`);
   }
 
+  // Phones stamp photos and videos with GPS position, capture time and device;
+  // none of it is kept (location is opt-in, per submission, for judges only).
+  const clean = kind === "image" || kind === "video" ? await withoutMetadata(buffer, detected.mime) : null;
+  const data = clean ?? buffer;
+
   const id = newId();
   const row: FileRow = {
     id,
@@ -88,21 +136,21 @@ export async function storeUpload(input: StoreUploadInput): Promise<FileRow> {
     kind,
     mime: detected.mime,
     ext: detected.ext,
-    size: buffer.length,
+    size: data.length,
     width: null,
     height: null,
     originalName: input.name?.slice(0, 200) ?? null,
-    variants: [],
+    variants: clean ? [CLEAN] : [],
     sortOrder: input.sortOrder ?? 0,
     createdAt: new Date(),
   };
 
   await fsp.mkdir(fileDir(row), { recursive: true });
-  await fsp.writeFile(variantPath(row, "original"), buffer);
+  await fsp.writeFile(variantPath(row, "original"), data);
 
   if (kind === "image") {
     try {
-      const base = sharp(buffer, { failOn: "none" }).rotate();
+      const base = sharp(data, { failOn: "none" }).autoOrient();
       const display = await base
         .clone()
         .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
@@ -113,13 +161,13 @@ export async function storeUpload(input: StoreUploadInput): Promise<FileRow> {
         .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true })
         .webp({ quality: 70 })
         .toFile(variantPath(row, "thumb"));
-      const meta = await sharp(buffer, { failOn: "none" }).metadata();
+      const meta = await sharp(data, { failOn: "none" }).metadata();
       const rotated = (meta.orientation ?? 1) >= 5;
       row.width = (rotated ? meta.height : meta.width) ?? display.width;
       row.height = (rotated ? meta.width : meta.height) ?? display.height;
-      row.variants = ["display", "thumb"];
+      row.variants.push("display", "thumb");
     } catch (err) {
-      // Formats sharp can't decode (e.g. some HEIC) are kept as-is.
+      // Formats sharp can't decode (e.g. HEVC-coded HEIC) are kept as-is.
       console.warn(`[storage] could not derive variants for ${id}:`, err);
     }
   }
@@ -184,6 +232,38 @@ export async function deleteFiles(rows: Pick<FileRow, "id" | "huntId">[]): Promi
 /** Removes every stored byte for a hunt (rows are removed by the hunt's cascade). */
 export async function deleteHuntStorage(huntId: string): Promise<void> {
   await fsp.rm(path.join(/*turbopackIgnore: true*/ env.uploadsDir, huntId), { recursive: true, force: true });
+}
+
+/**
+ * Cleans photos and videos stored before uploads were cleaned on arrival
+ * (see storeUpload). Runs in the background at boot; a no-op once every file
+ * is clean. Files it can't clean stay limited to staff and their own team.
+ */
+export async function cleanStoredUploads(): Promise<number> {
+  const rows = await db
+    .select()
+    .from(files)
+    .where(and(inArray(files.kind, ["image", "video"]), notLike(files.variants, `%"${CLEAN}"%`)));
+  let cleaned = 0;
+  for (const row of rows) {
+    if (!canStripMetadata(row.mime) && !REENCODE[row.mime]) continue;
+    const original = variantPath(row, "original");
+    try {
+      const clean = await withoutMetadata(await fsp.readFile(original), row.mime);
+      if (!clean) continue;
+      // Replace atomically: a download in progress keeps reading the old file.
+      await fsp.writeFile(`${original}.tmp`, clean);
+      await fsp.rename(`${original}.tmp`, original);
+      await db
+        .update(files)
+        .set({ size: clean.length, variants: [CLEAN, ...row.variants] })
+        .where(eq(files.id, row.id));
+      cleaned++;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") console.warn(`[storage] could not clean ${row.id}:`, err);
+    }
+  }
+  return cleaned;
 }
 
 export function fileExists(p: string): boolean {

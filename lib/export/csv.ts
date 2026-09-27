@@ -43,6 +43,37 @@ export function csvCell(value: CsvValue): string {
   return NEEDS_QUOTES.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
+/**
+ * A moment as spreadsheets read it: "2026-09-28 03:24:52", local time in the
+ * hunt's zone (name the zone in the column header). Excel, Numbers and Sheets
+ * treat this as a date and time; an ISO string with "Z" stays text there and
+ * shows UTC, which for evening events east of UTC is the previous day.
+ */
+export function csvTime(value: Date | number | null | undefined, timeZone: string): string | null {
+  if (value == null) return null;
+  const date = typeof value === "number" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return null;
+  const format = (zone: string) =>
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = format(timeZone);
+  } catch {
+    parts = format("UTC");
+  }
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "00";
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
 /** One CSV record (without the line break). */
 export function csvRow(values: readonly CsvValue[]): string {
   return values.map(csvCell).join(",");

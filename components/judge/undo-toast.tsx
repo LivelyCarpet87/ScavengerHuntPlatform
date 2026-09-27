@@ -24,11 +24,14 @@ export function UndoToast({
   onUndo,
   onDismiss,
   undoing,
+  singleKeys = true,
 }: {
   state: UndoToastState | null;
   onUndo: () => void;
   onDismiss: () => void;
   undoing?: boolean;
+  /** Whether the U shortcut is on (Ctrl/⌘ Z always works). */
+  singleKeys?: boolean;
 }) {
   useEffect(() => {
     if (!state) return;
@@ -59,10 +62,10 @@ export function UndoToast({
             onClick={onUndo}
             disabled={undoing}
             className={buttonClass("quiet", "md", "shrink-0")}
-            aria-keyshortcuts="U Control+Z Meta+Z"
+            aria-keyshortcuts={singleKeys ? "U Control+Z Meta+Z" : "Control+Z Meta+Z"}
           >
             Undo
-            <KeyHint k="U" className="hidden lg:inline-flex" />
+            {singleKeys ? <KeyHint k="U" className="hidden lg:inline-flex" /> : null}
           </button>
         </div>
       ) : null}

@@ -1,9 +1,9 @@
 import { Skeleton, SkeletonRows } from "@/components/home/skeleton";
 
-/** Hunt home skeleton: the bib, the finish bar, the control card and the task list. */
+/** Hunt home skeleton: the bib (with the finish panel from md), the task list and the control card. */
 export default function Loading() {
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6 sm:gap-8">
       <output className="sr-only">Loading the hunt</output>
       <div aria-hidden className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="flex flex-col gap-5 rounded-lg border-2 border-line px-5 pt-5 pb-4 sm:px-7 sm:pt-6">
@@ -25,17 +25,8 @@ export default function Loading() {
             </div>
           </div>
         </div>
-        {/* The phase panel: a slim bar on phones, beside the bib from md. */}
-        <Skeleton className="h-[3.25rem] w-full rounded-lg md:h-auto" />
-      </div>
-      <div aria-hidden>
-        <Skeleton className="h-7 w-36" />
-        <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-1.5">
-          {Array.from({ length: 12 }, (_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
-            <Skeleton key={i} className="aspect-square rounded-sm" />
-          ))}
-        </div>
+        {/* The finish panel sits beside the bib from md; on phones the header shows the time left. */}
+        <Skeleton className="hidden h-auto w-full rounded-lg md:block" />
       </div>
       <div aria-hidden className="flex flex-col gap-3">
         <Skeleton className="h-7 w-20" />
@@ -45,6 +36,15 @@ export default function Loading() {
           ))}
         </div>
         <SkeletonRows rows={6} />
+      </div>
+      <div aria-hidden>
+        <Skeleton className="h-7 w-36" />
+        <div className="mt-3 grid grid-cols-[repeat(auto-fill,minmax(3.25rem,1fr))] gap-1.5">
+          {Array.from({ length: 12 }, (_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static placeholders
+            <Skeleton key={i} className="aspect-square rounded-sm" />
+          ))}
+        </div>
       </div>
     </div>
   );

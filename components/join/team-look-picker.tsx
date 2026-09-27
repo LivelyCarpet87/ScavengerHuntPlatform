@@ -1,6 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
+import { useId } from "react";
 import { TeamAvatar } from "@/components/ui/team-badge";
 import { TEAM_COLOR_KEYS, TEAM_COLORS, TEAM_EMOJI, type TeamColor } from "@/lib/palette";
 import { cn } from "@/lib/utils";
@@ -8,8 +9,26 @@ import { cn } from "@/lib/utils";
 /*
  * Emoji and color for a team, as native radio groups (they submit with the
  * form, and arrow keys move between options). Controlled, so a failed submit
- * never loses the choice.
+ * never loses the choice. A problem with the choice is tied to the group and
+ * its radios, and the chosen radio (or the first) is marked invalid, so the
+ * forms' first-error focus lands on it and a screen reader reads the message.
  */
+
+/** Props for each radio: described by the group's error, invalid on the one focus should land on. */
+function radioErrorProps(error: string | undefined, errorId: string, invalid: boolean) {
+  return error
+    ? { "aria-describedby": errorId, "aria-invalid": invalid ? (true as const) : undefined }
+    : { "aria-describedby": undefined, "aria-invalid": undefined };
+}
+
+function PickerError({ id, error }: { id: string; error?: string }) {
+  if (!error) return null;
+  return (
+    <p id={id} className="text-sm font-medium text-danger">
+      {error}
+    </p>
+  );
+}
 
 export function EmojiPicker({
   value,
@@ -22,8 +41,10 @@ export function EmojiPicker({
   error?: string;
   className?: string;
 }) {
+  const errorId = useId();
+  const chosen = TEAM_EMOJI.includes(value) ? value : TEAM_EMOJI[0];
   return (
-    <fieldset className={cn("flex flex-col gap-2", className)}>
+    <fieldset aria-describedby={error ? errorId : undefined} className={cn("flex flex-col gap-2", className)}>
       <legend className="mb-2 text-sm font-semibold text-ink">Emoji</legend>
       <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-10">
         {TEAM_EMOJI.map((emoji) => (
@@ -41,13 +62,14 @@ export function EmojiPicker({
               value={emoji}
               checked={value === emoji}
               onChange={() => onChange(emoji)}
+              {...radioErrorProps(error, errorId, emoji === chosen)}
               className="sr-only"
             />
             {emoji}
           </label>
         ))}
       </div>
-      {error ? <p className="text-sm font-medium text-danger">{error}</p> : null}
+      <PickerError id={errorId} error={error} />
     </fieldset>
   );
 }
@@ -63,8 +85,10 @@ export function ColorPicker({
   error?: string;
   className?: string;
 }) {
+  const errorId = useId();
+  const chosen = (TEAM_COLOR_KEYS as string[]).includes(value) ? value : TEAM_COLOR_KEYS[0];
   return (
-    <fieldset className={cn("flex flex-col gap-2", className)}>
+    <fieldset aria-describedby={error ? errorId : undefined} className={cn("flex flex-col gap-2", className)}>
       <legend className="mb-2 text-sm font-semibold text-ink">Color</legend>
       <div className="grid grid-cols-6 gap-1.5 sm:flex sm:flex-wrap sm:gap-1">
         {TEAM_COLOR_KEYS.map((key) => {
@@ -82,6 +106,7 @@ export function ColorPicker({
                 value={key}
                 checked={checked}
                 onChange={() => onChange(key)}
+                {...radioErrorProps(error, errorId, key === chosen)}
                 className="sr-only"
               />
               <span className="sr-only">{swatch.label}</span>
@@ -99,7 +124,7 @@ export function ColorPicker({
           );
         })}
       </div>
-      {error ? <p className="text-sm font-medium text-danger">{error}</p> : null}
+      <PickerError id={errorId} error={error} />
     </fieldset>
   );
 }

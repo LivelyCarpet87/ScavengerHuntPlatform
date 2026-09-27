@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { RememberTeam } from "@/components/join/device-team";
 import { LiveRefresh } from "@/components/live/live-refresh";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -79,6 +80,7 @@ export default async function UpdatesPage({ params }: { params: Promise<{ slug: 
   return (
     <div className="flex flex-col gap-6">
       <LiveRefresh huntId={hunt.id} on={["announcement.created", "submission.judged"]} />
+      <RememberTeam huntId={hunt.id} teamName={me.team.name} playerName={me.player.name} />
       <PageHeader
         title="Updates"
         description="Announcements from the organizers, and what the judges decided on your team’s proof."

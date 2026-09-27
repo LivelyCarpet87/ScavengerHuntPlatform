@@ -31,9 +31,18 @@ export type TaskRowData = {
  * The task list, laid out like an orienteering control description sheet
  * (a heavier rule every third row). Rows reorder with Move up / Move down
  * buttons: the change shows instantly, focus stays on the button you pressed,
- * and screen readers hear the new position.
+ * and screen readers hear the new position. `readOnly` (archived hunts) drops
+ * the move buttons.
  */
-export function TaskList({ huntId, rows }: { huntId: string; rows: TaskRowData[] }) {
+export function TaskList({
+  huntId,
+  rows,
+  readOnly = false,
+}: {
+  huntId: string;
+  rows: TaskRowData[];
+  readOnly?: boolean;
+}) {
   const [optimistic, setOptimistic] = useOptimistic(rows);
   const [, startTransition] = useTransition();
   const [announcement, setAnnouncement] = useState("");
@@ -130,28 +139,30 @@ export function TaskList({ huntId, rows }: { huntId: string; rows: TaskRowData[]
                 ) : null}
               </p>
             </div>
-            <div className="relative z-10 flex shrink-0 gap-1 self-center">
-              <button
-                id={`move-up-${row.id}`}
-                type="button"
-                onClick={() => move(row.id, "up")}
-                disabled={i === 0}
-                aria-label={`Move “${row.title}” up`}
-                className="grid size-11 place-items-center rounded-md text-ink-2 hover:bg-mist-2 hover:text-ink disabled:opacity-30"
-              >
-                <ArrowUp className="size-4" />
-              </button>
-              <button
-                id={`move-down-${row.id}`}
-                type="button"
-                onClick={() => move(row.id, "down")}
-                disabled={i === optimistic.length - 1}
-                aria-label={`Move “${row.title}” down`}
-                className="grid size-11 place-items-center rounded-md text-ink-2 hover:bg-mist-2 hover:text-ink disabled:opacity-30"
-              >
-                <ArrowDown className="size-4" />
-              </button>
-            </div>
+            {readOnly ? null : (
+              <div className="relative z-10 flex shrink-0 gap-1 self-center">
+                <button
+                  id={`move-up-${row.id}`}
+                  type="button"
+                  onClick={() => move(row.id, "up")}
+                  disabled={i === 0}
+                  aria-label={`Move “${row.title}” up`}
+                  className="grid size-11 place-items-center rounded-md text-ink-2 hover:bg-mist-2 hover:text-ink disabled:opacity-30"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
+                <button
+                  id={`move-down-${row.id}`}
+                  type="button"
+                  onClick={() => move(row.id, "down")}
+                  disabled={i === optimistic.length - 1}
+                  aria-label={`Move “${row.title}” down`}
+                  className="grid size-11 place-items-center rounded-md text-ink-2 hover:bg-mist-2 hover:text-ink disabled:opacity-30"
+                >
+                  <ArrowDown className="size-4" />
+                </button>
+              </div>
+            )}
           </li>
         ))}
       </ol>

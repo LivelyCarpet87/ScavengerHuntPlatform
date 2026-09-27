@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp, Trash } from "lucide-react";
-import { useTransition } from "react";
+import { useLayoutEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/field";
 import { FormMessage, fieldError } from "@/components/ui/form";
@@ -14,8 +14,59 @@ import { useActionForm } from "../use-action-form";
 
 export type HintData = { id: string; body: string; cost: number; reveals: number };
 
-/** Hints for one task: edit in place, reorder, delete, add. */
-export function HintsEditor({ huntId, taskId, hints }: { huntId: string; taskId: string; hints: HintData[] }) {
+type Direction = "up" | "down";
+
+const moveButtonId = (hintId: string, direction: Direction) => `hint-${direction}-${hintId}`;
+
+/**
+ * Hints for one task: edit in place, reorder, delete, add. Reordering shows
+ * straight away, keeps focus on the button you pressed and tells screen
+ * readers the new position (like the task list). `readOnly` (archived hunts)
+ * lists the hints without any controls.
+ */
+export function HintsEditor({
+  huntId,
+  taskId,
+  hints,
+  readOnly = false,
+}: {
+  huntId: string;
+  taskId: string;
+  hints: HintData[];
+  readOnly?: boolean;
+}) {
+  const [optimistic, setOptimistic] = useOptimistic(hints);
+  const [, startTransition] = useTransition();
+  const [announcement, setAnnouncement] = useState("");
+
+  // Reordering moves DOM nodes, which drops focus; put it back once the new order is on screen.
+  const focusAfter = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!focusAfter.current || optimistic.length === 0) return;
+    document.getElementById(focusAfter.current)?.focus();
+    focusAfter.current = null;
+  }, [optimistic]);
+
+  const move = (hintId: string, direction: Direction) => {
+    const from = optimistic.findIndex((h) => h.id === hintId);
+    const to = direction === "up" ? from - 1 : from + 1;
+    if (from < 0 || to < 0 || to >= optimistic.length) return;
+    const next = [...optimistic];
+    [next[from], next[to]] = [next[to], next[from]];
+    // At the top or bottom the pressed button is switched off: keep focus on the other one.
+    const atEdge = to === 0 ? "up" : to === next.length - 1 ? "down" : null;
+    focusAfter.current = moveButtonId(hintId, atEdge === direction ? (direction === "up" ? "down" : "up") : direction);
+    startTransition(async () => {
+      setOptimistic(next);
+      const result = await moveHintAction({ huntId, hintId, direction });
+      if (result && !result.ok) {
+        toast({ title: "Couldn’t move the hint", description: result.error, tone: "danger" });
+        return;
+      }
+      setAnnouncement(`Moved hint ${from + 1} ${direction}. It’s now hint ${to + 1} of ${next.length}.`);
+    });
+  };
+
   return (
     <section id="hints" aria-labelledby="hints-heading" className="flex flex-col gap-4">
       <div>
@@ -23,35 +74,77 @@ export function HintsEditor({ huntId, taskId, hints }: { huntId: string; taskId:
           Hints
         </h2>
         <p className="mt-1 text-sm text-ink-2">
-          Teams reveal hints in this order and pay the cost from their score. Changing a cost doesn’t affect teams who
-          already revealed the hint.
+          {readOnly
+            ? "Teams reveal hints in this order and pay the cost from their score."
+            : "Teams reveal hints in this order and pay the cost from their score. Changing a cost doesn’t affect teams who already revealed the hint."}
         </p>
       </div>
-      {hints.length > 0 ? (
-        <ol className="divide-y divide-line rounded-lg border border-line">
-          {hints.map((hint, i) => (
-            <HintRow key={hint.id} huntId={huntId} hint={hint} index={i} total={hints.length} />
-          ))}
-        </ol>
-      ) : null}
-      <AddHint huntId={huntId} taskId={taskId} first={hints.length === 0} />
+      <p className="sr-only" aria-live="polite">
+        {announcement}
+      </p>
+      {readOnly ? (
+        optimistic.length > 0 ? (
+          <ol className="divide-y divide-line rounded-lg border border-line">
+            {optimistic.map((hint, i) => (
+              <li key={hint.id} className="flex flex-col gap-1 p-4">
+                <p className="text-sm font-semibold">
+                  Hint {i + 1}
+                  <span className="ml-2 font-normal text-ink-2">
+                    costs {formatPoints(hint.cost)}
+                    {hint.reveals > 0 ? `, revealed by ${hint.reveals} ${hint.reveals === 1 ? "team" : "teams"}` : null}
+                  </span>
+                </p>
+                <p className="whitespace-pre-line wrap-anywhere">{hint.body}</p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-sm text-ink-2">This task has no hints.</p>
+        )
+      ) : (
+        <>
+          {optimistic.length > 0 ? (
+            <ol className="divide-y divide-line rounded-lg border border-line">
+              {optimistic.map((hint, i) => (
+                <HintRow
+                  key={hint.id}
+                  huntId={huntId}
+                  hint={hint}
+                  index={i}
+                  total={optimistic.length}
+                  onMove={(direction) => move(hint.id, direction)}
+                />
+              ))}
+            </ol>
+          ) : null}
+          <AddHint huntId={huntId} taskId={taskId} first={optimistic.length === 0} />
+        </>
+      )}
     </section>
   );
 }
 
-function HintRow({ huntId, hint, index, total }: { huntId: string; hint: HintData; index: number; total: number }) {
+function HintRow({
+  huntId,
+  hint,
+  index,
+  total,
+  onMove,
+}: {
+  huntId: string;
+  hint: HintData;
+  index: number;
+  total: number;
+  onMove: (direction: Direction) => void;
+}) {
   const { state, pending, onSubmit, formRef } = useActionForm(updateHintAction, {
     onSuccess: (s) => {
       if (s?.ok && s.message) toast({ title: s.message, tone: "success" });
     },
   });
-  const [moving, startMove] = useTransition();
-  const move = (direction: "up" | "down") =>
-    startMove(async () => {
-      const result = await moveHintAction({ huntId, hintId: hint.id, direction });
-      if (result && !result.ok) toast({ title: "Couldn’t move the hint", description: result.error, tone: "danger" });
-    });
   const label = `Hint ${index + 1}`;
+  const moveButton =
+    "grid size-10 place-items-center rounded-md text-ink-2 hover:bg-mist hover:text-ink disabled:opacity-30";
 
   return (
     <li className="flex flex-col gap-3 p-4">
@@ -68,21 +161,24 @@ function HintRow({ huntId, hint, index, total }: { huntId: string; hint: HintDat
             ) : null}
           </p>
           <div className="flex gap-0.5">
+            {/* Only the ends switch off: a button pressed mid-move keeps its focus. */}
             <button
+              id={moveButtonId(hint.id, "up")}
               type="button"
-              onClick={() => move("up")}
-              disabled={index === 0 || moving}
+              onClick={() => onMove("up")}
+              disabled={index === 0}
               aria-label={`Move ${label} up`}
-              className="grid size-10 place-items-center rounded-md text-ink-2 hover:bg-mist hover:text-ink disabled:opacity-30"
+              className={moveButton}
             >
               <ArrowUp className="size-4" />
             </button>
             <button
+              id={moveButtonId(hint.id, "down")}
               type="button"
-              onClick={() => move("down")}
-              disabled={index === total - 1 || moving}
+              onClick={() => onMove("down")}
+              disabled={index === total - 1}
               aria-label={`Move ${label} down`}
-              className="grid size-10 place-items-center rounded-md text-ink-2 hover:bg-mist hover:text-ink disabled:opacity-30"
+              className={moveButton}
             >
               <ArrowDown className="size-4" />
             </button>

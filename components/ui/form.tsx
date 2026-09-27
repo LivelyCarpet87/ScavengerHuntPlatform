@@ -21,23 +21,37 @@ export function SubmitButton({
   );
 }
 
-/** Form-level result message for an ActionState (field errors render next to their fields). */
+/**
+ * Form-level result message for an ActionState (field errors render next to
+ * their fields). The success status region stays mounted, empty and out of
+ * the layout, so screen readers announce "Settings saved" when it appears (a
+ * live region inserted together with its text is often skipped). Errors are
+ * alerts, which are announced on insertion.
+ */
 export function FormMessage({ state, className }: { state: ActionState; className?: string }) {
-  if (!state) return null;
-  if (state.ok) {
-    if (!state.message) return null;
-    return (
-      <output className={cn("flex items-center gap-2 text-sm font-medium text-forest", className)}>
-        <CircleCheck aria-hidden className="size-4 shrink-0" />
-        {state.message}
-      </output>
-    );
-  }
+  const success = state?.ok ? state.message : null;
   return (
-    <p role="alert" className={cn("flex items-start gap-2 text-sm font-medium text-danger", className)}>
-      <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
-      {state.error}
-    </p>
+    <>
+      <output
+        className={cn(
+          success ? "flex items-center gap-2 text-sm font-medium text-forest" : "sr-only",
+          success && className,
+        )}
+      >
+        {success ? (
+          <>
+            <CircleCheck aria-hidden className="size-4 shrink-0" />
+            {success}
+          </>
+        ) : null}
+      </output>
+      {state && !state.ok ? (
+        <p role="alert" className={cn("flex items-start gap-2 text-sm font-medium text-danger", className)}>
+          <CircleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+          {state.error}
+        </p>
+      ) : null}
+    </>
   );
 }
 

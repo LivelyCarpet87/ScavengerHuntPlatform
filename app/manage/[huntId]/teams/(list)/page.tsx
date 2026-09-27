@@ -2,6 +2,7 @@ import { CircleCheck, EyeOff, Plus, Printer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LiveRefresh } from "@/components/live/live-refresh";
+import { ArchivedNotice } from "@/components/staff/archived-notice";
 import { AddTeamsDialog } from "@/components/staff/teams/add-teams-dialog";
 import { Numeral, Ordinal } from "@/components/ui/bib";
 import { ButtonLink } from "@/components/ui/button";
@@ -13,10 +14,14 @@ import { formatPoints, plural } from "@/lib/format";
 import { formatCode } from "@/lib/ids";
 import { getStandings } from "@/lib/scoring/service";
 import { hasScored } from "@/lib/staff/format";
+import { isArchived } from "@/lib/staff/guards";
+import { staffTitle } from "@/lib/staff/metadata";
 import { auditData, listTeams, memberCounts, submissionCountsByTeam } from "@/lib/staff/queries";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Teams" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Teams");
+}
 
 export default async function TeamsPage({
   params,
@@ -29,6 +34,9 @@ export default async function TeamsPage({
   const sp = await searchParams;
   const { hunt, role } = await requireStaff(huntId, "judge");
   const organizer = roleAtLeast(role, "organizer");
+  // Archived hunts are read-only: no new teams.
+  const archived = isArchived(hunt);
+  const canAdd = organizer && !archived;
   const [teamRows, members, subs, standings, deletedData] = await Promise.all([
     listTeams(hunt.id),
     memberCounts(hunt.id),
@@ -49,7 +57,7 @@ export default async function TeamsPage({
   const deleted = typeof deletedData?.name === "string" ? deletedData.name : null;
 
   return (
-    <div className="flex flex-col gap-6 pb-24 md:pb-0">
+    <div className={cn("flex flex-col gap-6", canAdd && "pb-24 md:pb-0")}>
       <LiveRefresh huntId={hunt.id} on={["teams.changed", "scores.changed"]} />
       <PageHeader
         title="Teams"
@@ -66,7 +74,7 @@ export default async function TeamsPage({
                 Print team cards
               </ButtonLink>
             ) : null}
-            {organizer ? (
+            {canAdd ? (
               <AddTeamsDialog huntId={hunt.id} placement="responsive" showTrigger={teamRows.length > 0} />
             ) : null}
           </>
@@ -79,11 +87,13 @@ export default async function TeamsPage({
         </Notice>
       ) : null}
 
+      {archived && organizer ? <ArchivedNotice huntId={hunt.id} /> : null}
+
       {rows.length === 0 ? (
         <EmptyState
-          title="No teams yet"
+          title={archived ? "No teams" : "No teams yet"}
           action={
-            organizer ? (
+            canAdd ? (
               <ButtonLink href={`/manage/${hunt.id}/teams?add=1`} scroll={false}>
                 <Plus aria-hidden />
                 Add teams
@@ -91,8 +101,9 @@ export default async function TeamsPage({
             ) : undefined
           }
         >
-          Teams appear here as soon as players register with the hunt code. You can also add them yourself and hand out
-          printed team cards at the start.
+          {archived
+            ? "Nobody took part in this hunt before it was archived."
+            : "Teams appear here as soon as players register with the hunt code. You can also add them yourself and hand out printed team cards at the start."}
         </EmptyState>
       ) : (
         <ol className="divide-y divide-line rounded-lg border border-line">

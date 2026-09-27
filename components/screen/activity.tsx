@@ -133,7 +133,9 @@ export function Ticker({ items }: { items: FeedItem[] }) {
   const entries = recent.map((item) => <TickerEntry key={`${item.kind}:${item.id}`} item={item} />);
 
   return (
-    <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+    // Entries fade out as they leave (and in as they arrive) rather than being sliced mid-word next to
+    // the label; each one starts clear of the fade.
+    <div className="flex min-w-0 flex-1 items-center overflow-hidden pl-20 [mask-image:linear-gradient(to_right,transparent,black_5rem,black_calc(100%-2.5rem),transparent)]">
       {reduced ? (
         <div className="flex min-w-0 items-center gap-10 overflow-hidden">{entries.slice(still, still + 2)}</div>
       ) : (

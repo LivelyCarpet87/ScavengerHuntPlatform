@@ -1,32 +1,36 @@
-import Link from "next/link";
-import { ResumeBar } from "@/components/home/resume-bar";
 import { YourHunts } from "@/components/home/your-hunts";
 import { CodeHero } from "@/components/join/code-hero";
 import { SiteHeader } from "@/components/shells/site-header";
+import { AccountMenu } from "@/components/staff/account-menu";
 import { ButtonLink } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getDeviceHunts } from "@/lib/player/queries";
 
-/** The front door: type the hunt code, jump back into your hunts, or head to the organizer tools. */
+/**
+ * The front door: type the hunt code, jump back into your hunts, or head to
+ * the organizer tools. While one of this device's hunts is live, getting back
+ * to it comes first and the code entry steps back to "Join another hunt".
+ */
 export default async function Home() {
   const [hunts, user] = await Promise.all([getDeviceHunts(), getCurrentUser()]);
-  const live = hunts.find((h) => h.phase === "live");
+  const live = hunts.some((h) => h.phase === "live");
   return (
     <>
       <SiteHeader>
-        {user ? (
-          <Link
-            href="/dashboard"
-            className="rounded-md px-3 py-2 text-sm font-semibold text-ink-2 hover:bg-mist hover:text-ink"
-          >
-            Your dashboard
-          </Link>
-        ) : null}
+        {user ? <AccountMenu name={user.name} email={user.email} isAdmin={user.isAdmin} /> : null}
       </SiteHeader>
-      {live ? <ResumeBar entry={live} /> : null}
       <main className="pb-16">
-        <CodeHero />
-        <YourHunts hunts={hunts} />
+        {live ? (
+          <>
+            <YourHunts hunts={hunts} leading />
+            <CodeHero title="Join another hunt" secondary className="mt-10 border-t" />
+          </>
+        ) : (
+          <>
+            <CodeHero />
+            <YourHunts hunts={hunts} />
+          </>
+        )}
         <section aria-labelledby="organize" className="mx-auto mt-12 max-w-xl px-4">
           <div className="flex flex-col gap-4 border-t border-line pt-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
@@ -38,7 +42,7 @@ export default async function Home() {
               </p>
             </div>
             <ButtonLink href={user ? "/dashboard" : "/login"} variant="secondary" className="self-start sm:self-center">
-              {user ? "Open your dashboard" : "Sign in to organize"}
+              {user ? "Open your hunts" : "Sign in to organize"}
             </ButtonLink>
           </div>
         </section>

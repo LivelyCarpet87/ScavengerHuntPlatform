@@ -1,4 +1,4 @@
-import { Images, Snowflake } from "lucide-react";
+import { ChevronRight, Images, Snowflake } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { RefreshAt } from "@/components/home/refresh-at";
@@ -49,10 +49,8 @@ export default async function ScoreboardPage({ params }: { params: Promise<{ slu
 
   return (
     <div className="flex flex-col gap-6">
-      <LiveRefresh
-        huntId={hunt.id}
-        on={["scores.changed", "teams.changed", "hunt.changed", "submission.judged", "tasks.changed"]}
-      />
+      {/* Scores and teams update in place (ScoreboardBoard fetches the standings); the rest of the page follows the hunt. */}
+      <LiveRefresh huntId={hunt.id} on={["hunt.changed"]} />
       {/* The start, the freeze and the finish happen on the clock: flip right on time. */}
       <RefreshAt at={[hunt.startsAt?.getTime(), hunt.freezeAt?.getTime(), hunt.endsAt?.getTime()]} />
 
@@ -101,17 +99,14 @@ export default async function ScoreboardPage({ params }: { params: Promise<{ slu
       ) : null}
 
       {started ? (
-        payload.standings.length > 0 ? (
-          <ScoreboardBoard
-            huntId={hunt.id}
-            timezone={hunt.timezone}
-            rows={payload.standings}
-            viewerTeamId={viewerTeamId}
-          />
-        ) : (
-          // Visitors already have "Join this hunt" in the header (desktop) or the bar at the bottom (phones).
-          <EmptyState title="No teams yet">Teams show up here as soon as they register.</EmptyState>
-        )
+        <ScoreboardBoard
+          huntId={hunt.id}
+          timezone={hunt.timezone}
+          rows={payload.standings}
+          updatedAt={payload.updatedAt}
+          viewerTeamId={viewerTeamId}
+          live={phase === "live"}
+        />
       ) : (
         <>
           <div className="flex items-start gap-3 rounded-lg bg-mist px-4 py-4">
@@ -132,23 +127,31 @@ export default async function ScoreboardPage({ params }: { params: Promise<{ slu
               ) : null}
             </div>
           </div>
-          <RegisteredTeams rows={payload.standings} viewerTeamId={viewerTeamId} />
+          <RegisteredTeams
+            huntId={hunt.id}
+            rows={payload.standings}
+            updatedAt={payload.updatedAt}
+            viewerTeamId={viewerTeamId}
+          />
         </>
       )}
 
       {galleryOpen && started ? (
         <Link
           href={`/h/${hunt.slug}/gallery`}
-          className="flex min-h-14 items-center gap-3 rounded-lg border border-line px-4 py-3 font-semibold hover:bg-mist"
+          className="group flex min-h-14 items-center gap-3 rounded-lg border border-line px-4 py-3 font-semibold hover:bg-mist"
         >
           <Images aria-hidden className="size-5 text-accent" />
           <span className="flex-1">{finished ? "See every accepted photo" : "Browse accepted photos"}</span>
-          <span className="text-sm font-medium text-ink-2">Gallery</span>
+          <ChevronRight aria-hidden className="size-5 shrink-0 text-ink-3 transition-colors group-hover:text-ink" />
         </Link>
       ) : null}
 
       {canJoin ? (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+        <div
+          data-bottom-bar
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden"
+        >
           <ButtonLink href={links.hunt(hunt.slug)} size="lg" className="w-full">
             Join this hunt
           </ButtonLink>

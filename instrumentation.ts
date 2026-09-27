@@ -11,4 +11,9 @@ export async function register() {
   await import("./lib/live/jobs");
   const { startBackgroundJobs } = await import("./lib/jobs");
   startBackgroundJobs();
+  // Photos and videos stored before uploads were cleaned on arrival lose their EXIF/GPS now.
+  const { cleanStoredUploads } = await import("./lib/storage");
+  cleanStoredUploads()
+    .then((n) => n > 0 && console.log(`[storage] removed metadata from ${n} stored photos and videos`))
+    .catch((err) => console.error("[storage] cleaning stored uploads failed", err));
 }

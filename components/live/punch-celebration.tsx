@@ -134,11 +134,12 @@ export function PunchCelebration({
       <p role="alert" className="sr-only">
         {announcement}
       </p>
+      {/* Opaque: the page under it (a task's done state, a checkpoint's result) never ghosts through. */}
       <button
         type="button"
         aria-label="Dismiss"
         onClick={() => setStatus("leaving")}
-        className="grid size-full cursor-default place-items-center bg-paper/95 px-6 animate-pop focus-visible:outline-none"
+        className="grid size-full cursor-default place-items-center bg-paper px-6 animate-pop focus-visible:outline-none"
       >
         <span aria-hidden className="flex flex-col items-center text-center">
           <span className="flex items-center gap-5">

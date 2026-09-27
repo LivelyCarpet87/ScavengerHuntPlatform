@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /** Bump when the terrain algorithm in lib/contours.ts changes, so browsers fetch the new art. */
-const TERRAIN_VERSION = "1";
+const TERRAIN_VERSION = "2";
 
 /**
  * A hunt's generated terrain: topographic contour lines seeded by the hunt id.

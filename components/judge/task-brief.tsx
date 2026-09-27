@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { memo, useState } from "react";
+import { memo, type ReactNode, useState } from "react";
 import { ControlMarker } from "@/components/ui/control";
-import { Markdown } from "@/components/ui/markdown";
 import { StatusGlyph } from "@/components/ui/status";
 import { matchAnswer } from "@/lib/judging/answers";
 import type { JudgeTask } from "@/lib/judging/types";
@@ -12,6 +11,7 @@ import { cn } from "@/lib/utils";
 /** What the task asks for and how it scores — the judge's rulebook for one submission. */
 export const TaskBrief = memo(function TaskBrief({
   task,
+  description,
   answerText,
   descriptionOpen,
   onDescriptionToggle,
@@ -21,6 +21,11 @@ export const TaskBrief = memo(function TaskBrief({
   className,
 }: {
   task: JudgeTask;
+  /**
+   * The task's description, rendered on the server (<Markdown>) so the
+   * Markdown parser never ships to judges' phones. Null when there is none.
+   */
+  description: ReactNode;
   /** The team's typed answer, to check against the accepted answers. */
   answerText?: string | null;
   /** Controlled open state for the description (the queue keeps it across submissions). */
@@ -63,7 +68,7 @@ export const TaskBrief = memo(function TaskBrief({
         </div>
       </div>
 
-      {task.description.trim() ? (
+      {description ? (
         <details
           open={open}
           onToggle={(e) => toggle(e.currentTarget.open)}
@@ -79,7 +84,7 @@ export const TaskBrief = memo(function TaskBrief({
             </svg>
             What the task asks
           </summary>
-          <Markdown className="mt-2 text-[0.9375rem]">{task.description}</Markdown>
+          <div className="mt-2 text-[0.9375rem]">{description}</div>
         </details>
       ) : null}
 

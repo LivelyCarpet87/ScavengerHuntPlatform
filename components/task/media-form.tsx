@@ -9,7 +9,7 @@ import { formatBytes } from "@/lib/format";
 import type { QueuedFile } from "@/lib/offline/queue";
 import { cn } from "@/lib/utils";
 import { ActionBar } from "./action-bar";
-import { type Coords, LocationToggle } from "./location-toggle";
+import { type LocationHandle, LocationToggle } from "./location-toggle";
 import {
   capturePoster,
   compressImage,
@@ -53,9 +53,15 @@ function upperFirst(s: string): string {
  * Photo/video proof (media tasks) and contest entries: pick or take up to
  * four files, add a note and optionally the location, and upload with
  * progress. Photos are shrunk on the phone first; videos get a poster frame.
+ *
+ * The controls in the action bar change as the player goes (pick → Submit →
+ * progress), so focus follows along (to Submit once files are added, to
+ * Cancel while uploading) instead of dropping to the page, and a status line
+ * for screen readers says what changed.
  */
 export function MediaForm({
   huntId,
+  teamId,
   task,
   accept,
   maxUploadBytes,
@@ -63,6 +69,7 @@ export function MediaForm({
   onQueued,
 }: {
   huntId: string;
+  teamId: string;
   task: ActionTask;
   /** <input accept> for the library picker (acceptAttr). */
   accept: string;
@@ -77,18 +84,24 @@ export function MediaForm({
 
   const [items, setItems] = useState<Item[]>([]);
   const [note, setNote] = useState("");
-  const [coords, setCoords] = useState<Coords | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Contest teams stay on the form to send more, so "sent" is confirmed right above the button
   // (a toast would sit on top of the pinned bar on phones).
   const [sentNote, setSentNote] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const { phase, submit, cancel, setPreparing, reset, busy } = useSubmitter(huntId, task.id);
+  /** What just changed, for screen readers (the visible controls say it by changing). */
+  const [status, setStatus] = useState("");
+  const { phase, submit, cancel, setPreparing, reset, busy } = useSubmitter(huntId, task.id, teamId);
 
   const photoInput = useRef<HTMLInputElement>(null);
   const videoInput = useRef<HTMLInputElement>(null);
   const libraryInput = useRef<HTMLInputElement>(null);
+  const location = useRef<LocationHandle>(null);
+  const submitButton = useRef<HTMLButtonElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const progress = useRef<HTMLDivElement>(null);
+  const firstPicker = useRef<HTMLButtonElement>(null);
   const urls = useRef(new Set<string>());
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const abortPrep = useRef(false);
@@ -122,6 +135,24 @@ export function MediaForm({
     return () => clearTimeout(t);
   }, [sentNote]);
 
+  // While a send runs, the focused control keeps being replaced (Submit by the progress bar,
+  // Cancel by "Almost done", the progress bar by the form again): focus goes to what took its place.
+  const followFocus = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs as the bar's contents change with the phase
+  useEffect(() => {
+    if (!followFocus.current) return;
+    const active = document.activeElement;
+    if (!active || active === document.body) {
+      const next = busy ? (cancelButton.current ?? progress.current) : (submitButton.current ?? firstPicker.current);
+      next?.focus();
+    }
+    if (!busy) followFocus.current = false;
+  }, [phase.kind]);
+
+  // Upload progress for screen readers, in quarters rather than every percent.
+  const quarter =
+    phase.kind === "uploading" && phase.total > 0 ? Math.floor((phase.loaded / phase.total) * 4) * 25 : null;
+
   function addFiles(list: FileList | File[] | null) {
     if (!list || list.length === 0) return;
     setError(null);
@@ -136,7 +167,7 @@ export function MediaForm({
       }
       const kind = mediaKindOf(file);
       if (!kind || (kind === "image" && !allowPhoto) || (kind === "video" && !allowVideo)) {
-        warnings.push(`“${file.name || "That file"}” isn't a ${wanted}. This task needs a ${wanted}.`);
+        warnings.push(`“${file.name || "That file"}” isn’t a ${wanted}. This task needs a ${wanted}.`);
         continue;
       }
       if (kind === "video" && file.size > maxUploadBytes) {
@@ -194,15 +225,27 @@ export function MediaForm({
       added.push(item);
       room -= 1;
     }
-    if (added.length) setItems((current) => [...current, ...added]);
+    if (added.length) {
+      setItems((current) => [...current, ...added]);
+      const total = items.length + added.length;
+      setStatus(`${upperFirst(countMedia(added.map((i) => i.kind)))} added. ${total} of ${MAX_FILES} ready to send.`);
+      // The picker that was used may be gone now; Submit is the next step.
+      requestAnimationFrame(() => submitButton.current?.focus());
+    }
     setWarning(warnings[0] ?? null);
   }
 
   function removeItem(key: string) {
-    const item = items.find((i) => i.key === key);
+    const index = items.findIndex((i) => i.key === key);
+    const item = items[index];
     if (item) revoke(item.preview);
     setItems((list) => list.filter((i) => i.key !== key));
     setWarning(null);
+    if (item) setStatus(`${item.kind === "video" ? "Video" : "Photo"} ${index + 1} removed.`);
+    // Its remove button is gone with it.
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body) (submitButton.current ?? firstPicker.current)?.focus();
+    });
   }
 
   function clearAll() {
@@ -229,10 +272,15 @@ export function MediaForm({
     if (!canSubmit || busy) return;
     setError(null);
     abortPrep.current = false;
+    followFocus.current = true;
     setPreparing();
-    const prepared = await Promise.all(items.map((i) => i.prepared));
     const firstVideo = items.find((i) => i.kind === "video");
-    const posterBlob = firstVideo?.poster ? await firstVideo.poster : null;
+    // A position taken now, not when the switch was turned on (contest teams send several entries).
+    const [prepared, posterBlob, coords] = await Promise.all([
+      Promise.all(items.map((i) => i.prepared)),
+      firstVideo?.poster ?? Promise.resolve(null),
+      location.current?.current() ?? Promise.resolve(null),
+    ]);
     if (abortPrep.current) {
       reset();
       return;
@@ -262,6 +310,7 @@ export function MediaForm({
         clearAll();
         if (contest) {
           setSentNote("Entry sent. Judges rank entries as they review them.");
+          setStatus("Entry sent. Judges rank entries as they review them.");
         } else if (outcome.reply.submission.status === "pending") {
           toast({
             title: `${upperFirst(describeMedia(kinds) || wanted)} sent`,
@@ -274,6 +323,7 @@ export function MediaForm({
       }
       case "queued":
         clearAll();
+        setStatus("Saved on this phone. It’ll send by itself when you’re back online.");
         onQueued();
         break;
       case "refused":
@@ -357,6 +407,7 @@ export function MediaForm({
       >
         {items.length === 0 ? (
           <button
+            ref={firstPicker}
             type="button"
             onClick={() => libraryInput.current?.click()}
             disabled={busy}
@@ -421,6 +472,7 @@ export function MediaForm({
                 <button
                   type="button"
                   onClick={() => libraryInput.current?.click()}
+                  aria-label={`Add another ${wanted}`}
                   className="flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-line-strong text-sm font-semibold text-ink-2 transition-colors hover:border-ink hover:text-ink"
                 >
                   <Plus aria-hidden className="size-5" />
@@ -457,7 +509,17 @@ export function MediaForm({
         )}
       </Field>
 
-      <LocationToggle onChange={setCoords} disabled={busy} />
+      <LocationToggle ref={location} disabled={busy} />
+
+      <output aria-live="polite" className="sr-only">
+        {busy
+          ? phase.kind === "processing"
+            ? "Almost done."
+            : quarter != null
+              ? `Uploading ${what}, ${quarter}%.`
+              : `Getting ${what} ready.`
+          : status}
+      </output>
 
       <ActionBar>
         {error ? (
@@ -471,9 +533,9 @@ export function MediaForm({
           </output>
         ) : null}
         {busy ? (
-          <UploadProgress phase={phase} what={what} onCancel={onCancel} />
+          <UploadProgress phase={phase} what={what} onCancel={onCancel} ref={progress} cancelRef={cancelButton} />
         ) : canSubmit ? (
-          <Button size="lg" className="w-full md:w-auto md:min-w-64" onClick={send}>
+          <Button ref={submitButton} size="lg" className="w-full md:w-auto md:min-w-64" onClick={send}>
             {submitLabel}
           </Button>
         ) : (

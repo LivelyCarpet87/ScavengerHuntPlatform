@@ -5,6 +5,8 @@ import { useActionState } from "react";
 import { FormMessage, SubmitButton } from "@/components/ui/form";
 import { Notice } from "@/components/ui/misc";
 import { type JoinTeamState, reclaimPlayer } from "@/lib/player/actions";
+import type { LeavingOutcome } from "@/lib/player/queries";
+import { leavingNote } from "./leaving-note";
 
 /**
  * "Already on this team?" — members whose device was signed out (lost phone,
@@ -16,6 +18,7 @@ export function ReclaimList({
   teamName,
   members,
   currentTeamName,
+  currentTeamOutcome = "stays",
   next,
 }: {
   huntId: string;
@@ -24,6 +27,8 @@ export function ReclaimList({
   members: { id: string; name: string }[];
   /** The team this device is on now, if another one. */
   currentTeamName: string | null;
+  /** What happens to that team when this device moves off it. */
+  currentTeamOutcome?: LeavingOutcome;
   next: string | null;
 }) {
   if (members.length === 0) return null;
@@ -39,7 +44,8 @@ export function ReclaimList({
       </div>
       {currentTeamName ? (
         <Notice tone="warning" icon={<ArrowLeftRight className="size-4" />}>
-          This device is on {currentTeamName} now. Picking a name here moves it to {teamName}.
+          This device is on {currentTeamName} now. Picking a name here moves it to {teamName}.{" "}
+          {leavingNote(currentTeamName, currentTeamOutcome)}
         </Notice>
       ) : null}
       <ul className="flex flex-wrap gap-2">
@@ -81,7 +87,8 @@ function ReclaimButton({
       </SubmitButton>
       {asked ? (
         <p className="max-w-60 text-sm text-ink-2">
-          This device is on {asked.from} now. Tap again to move it to {asked.to}.
+          This device is on {asked.from} now. Tap again to move it to {asked.to}.{" "}
+          {leavingNote(asked.from, asked.fromOutcome)}
         </p>
       ) : null}
       <FormMessage state={state?.ok ? null : state} className="max-w-60" />

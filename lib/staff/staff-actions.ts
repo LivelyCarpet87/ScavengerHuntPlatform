@@ -159,5 +159,5 @@ export async function revokeInviteAction(_prev: ActionState, formData: FormData)
     targetId: parsed.data.inviteId,
   });
   revalidateHunt(hunt.id);
-  return ok("Invite link revoked. It no longer works.");
+  return ok("Invite link turned off. Anyone who has it can no longer use it.");
 }

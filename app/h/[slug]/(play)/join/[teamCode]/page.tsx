@@ -12,7 +12,7 @@ import { getPlayerHunt } from "@/lib/auth/access";
 import { canViewScoreboard, getHuntBySlug, huntPhase } from "@/lib/hunts";
 import { formatCode, normalizeCode } from "@/lib/ids";
 import { joinPolicy, safeNextPath } from "@/lib/player/join";
-import { codeGuard, getTeamByCode, getTeamMembers } from "@/lib/player/queries";
+import { codeGuard, getTeamByCode, getTeamMembers, leavingOutcome } from "@/lib/player/queries";
 import { links } from "@/lib/url";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -46,12 +46,15 @@ export default async function TeamInvitePage({
     const policy = joinPolicy(hunt, huntPhase(hunt));
     return (
       <div className="mx-auto flex max-w-md flex-col gap-2">
+        <h1 className="sr-only">Join a team in {hunt.name}</h1>
         <EmptyState title={blocked ? "Too many tries" : "That team code didn’t work"}>
           {!blocked ? (
             <>
               No team in {hunt.name} uses{" "}
-              <span className="font-bib text-lg text-ink">{formatCode(code) || "that code"}</span>. Check it with your
-              teammates and fix it below.
+              <span className="font-bib text-[1.15em] leading-none whitespace-nowrap text-ink">
+                {formatCode(code) || "that code"}
+              </span>
+              . Check it with your teammates and fix it below.
             </>
           ) : (
             "Too many wrong codes were tried from this network. Wait a minute, then open the link again."
@@ -77,12 +80,16 @@ export default async function TeamInvitePage({
     );
   }
 
-  const members = await getTeamMembers(team.id);
+  const moving = me && me.team.id !== team.id ? me : null;
+  const [members, currentTeamOutcome] = await Promise.all([
+    getTeamMembers(team.id),
+    moving ? leavingOutcome(moving.team.id, moving.player.id) : undefined,
+  ]);
   const phase = huntPhase(hunt);
   const policy = joinPolicy(hunt, phase);
   const full = hunt.maxTeamSize != null && members.length >= hunt.maxTeamSize;
   const detached = members.filter((m) => m.sessionId == null).map((m) => ({ id: m.id, name: m.name }));
-  const currentTeamName = me && me.team.id !== team.id ? me.team.name : null;
+  const currentTeamName = moving?.team.name ?? null;
   const scoreboard = canViewScoreboard(hunt, { isStaff: false, isPlayer: !!me });
 
   return (
@@ -138,6 +145,7 @@ export default async function TeamInvitePage({
             next={next}
             team={{ code: team.code, name: team.name }}
             currentTeamName={currentTeamName}
+            currentTeamOutcome={currentTeamOutcome}
             defaultName={me?.player.name}
             submitLabel={`Join ${team.name}`}
           />
@@ -151,6 +159,7 @@ export default async function TeamInvitePage({
           teamName={team.name}
           members={detached}
           currentTeamName={currentTeamName}
+          currentTeamOutcome={currentTeamOutcome}
           next={next}
         />
       )}

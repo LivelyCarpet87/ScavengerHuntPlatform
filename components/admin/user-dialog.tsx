@@ -10,7 +10,7 @@ import { FormMessage, fieldError, SubmitButton } from "@/components/ui/form";
 import { Notice } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 import type { AdminUserRow } from "@/lib/platform/admin";
-import { deleteUserAction, setAdminAction, setPasswordAction } from "@/lib/platform/admin-actions";
+import { deleteUserAction, setAdminAction, setCreatorAction, setPasswordAction } from "@/lib/platform/admin-actions";
 import { firstName } from "@/lib/platform/rules";
 
 /*
@@ -53,6 +53,29 @@ function AdminRights({ user, isMe, onlyAdmin }: { user: AdminUserRow; isMe: bool
           </SubmitButton>
         </form>
       )}
+      <FormMessage state={state} className="mt-3" />
+    </Section>
+  );
+}
+
+function CreatorRights({ user }: { user: AdminUserRow }) {
+  const [state, action] = useActionState(setCreatorAction, null);
+  if (user.isAdmin) return null;
+  const name = firstName(user.name);
+  return (
+    <Section title="Creating hunts">
+      <p className="mt-1 text-sm text-ink-2">
+        {user.canCreateHunts
+          ? `${name} can create and run their own hunts.`
+          : `${name} works only on the hunts they're invited to. Organizer access lets them create their own.`}
+      </p>
+      <form action={action} className="mt-3 flex flex-col items-start gap-3">
+        <input type="hidden" name="userId" value={user.id} />
+        <input type="hidden" name="creator" value={user.canCreateHunts ? "revoke" : "grant"} />
+        <SubmitButton variant="secondary" pendingLabel="Saving">
+          {user.canCreateHunts ? "Remove organizer access" : "Give organizer access"}
+        </SubmitButton>
+      </form>
       <FormMessage state={state} className="mt-3" />
     </Section>
   );
@@ -112,7 +135,9 @@ function DeleteAccount({ user, onDeleted }: { user: AdminUserRow; onDeleted: () 
   const confirmRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (!confirming) return;
-    confirmRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // A scripted smooth scroll ignores the reduced-motion CSS, so ask the setting here.
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    confirmRef.current?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
     confirmRef.current?.querySelector<HTMLButtonElement>('button[type="submit"]')?.focus({ preventScroll: true });
   }, [confirming]);
   useEffect(() => {
@@ -183,6 +208,7 @@ export function UserDialog({
     >
       <div className="flex flex-col divide-y divide-line">
         <AdminRights user={user} isMe={isMe} onlyAdmin={adminCount <= 1} />
+        <CreatorRights user={user} />
         <NewPassword user={user} isMe={isMe} />
         {isMe ? null : <DeleteAccount user={user} onDeleted={onClose} />}
       </div>

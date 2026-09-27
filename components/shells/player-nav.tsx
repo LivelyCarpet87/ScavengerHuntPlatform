@@ -40,6 +40,7 @@ export function PlayerBottomNav({ slug, unread = 0 }: { slug: string; unread?: n
   return (
     <nav
       aria-label="Hunt"
+      data-bottom-nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-paper/95 pb-safe backdrop-blur md:hidden"
     >
       <ul className="mx-auto grid max-w-md grid-cols-4">
@@ -57,14 +58,18 @@ export function PlayerBottomNav({ slug, unread = 0 }: { slug: string; unread?: n
                 )}
               >
                 <span className="relative">
-                  <Icon className="size-6" />
+                  <Icon className="size-6" aria-hidden />
                   {tab.label === "Updates" && unread > 0 ? (
-                    <span className="absolute -top-1 -right-2 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 font-bib text-[0.65rem] leading-none text-white">
+                    <span
+                      aria-hidden
+                      className="absolute -top-1 -right-2 grid h-4 min-w-4 place-items-center rounded-full bg-danger px-1 font-bib text-[0.65rem] leading-none text-danger-ink"
+                    >
                       {unread > 9 ? "9+" : unread}
                     </span>
                   ) : null}
                 </span>
                 {tab.label}
+                {tab.label === "Updates" && unread > 0 ? <span className="sr-only">, {unread} unread</span> : null}
                 {active ? <span aria-hidden className="absolute top-0 h-[3px] w-10 rounded-b-full bg-accent" /> : null}
               </Link>
             </li>
@@ -95,10 +100,15 @@ export function PlayerTopTabs({ slug, unread = 0 }: { slug: string; unread?: num
                     "text-ink after:absolute after:inset-x-2 after:bottom-0 after:h-[3px] after:rounded-t-full after:bg-accent",
                 )}
               >
-                <Icon className="size-4" />
+                <Icon className="size-4" aria-hidden />
                 {tab.label}
                 {tab.label === "Updates" && unread > 0 ? (
-                  <span className="rounded-full bg-danger px-1.5 font-bib text-xs text-white">{unread}</span>
+                  <>
+                    <span aria-hidden className="rounded-full bg-danger px-1.5 font-bib text-xs text-danger-ink">
+                      {unread}
+                    </span>
+                    <span className="sr-only">, {unread} unread</span>
+                  </>
                 ) : null}
               </Link>
             </li>

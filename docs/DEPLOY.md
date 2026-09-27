@@ -159,16 +159,23 @@ about the standalone output; it works regardless.
 Two parts of the app need the proxy's help:
 
 - **Live updates** are Server-Sent Events at `/api/hunts/<id>/events`: long-lived
-  responses that must not be buffered. The server sends a keep-alive comment
-  every 20 seconds.
+  responses that must not be buffered. The server sends a keep-alive event
+  every 20 seconds. Every open tab holds one of these connections, so serve
+  HTTP/2 to browsers (both configurations below do): over HTTP/1.1 a browser
+  allows only six connections per host.
 - **Uploads** arrive at `/api/hunts/<id>/submissions`, up to four files in one
   request. Allow at least 4 × `MAX_UPLOAD_MB` plus a few megabytes (about
   410 MB with the default 100 MB), and generous timeouts: phones on bad signal
   upload slowly. Server Actions accept up to 12 MB.
 
-Pass the original host and scheme, and set `X-Forwarded-For` to the client's
-address (not appended to whatever the client sent): sign-in and join rate
-limits use it.
+Pass the original host and scheme, and `X-Forwarded-For`: sign-in and join
+rate limits key on its last entry, the address your proxy saw, so a proxy that
+appends to it (nginx's `$proxy_add_x_forwarded_for`) works as well as one that
+replaces it. When another proxy that forwards the client's address sits in
+front (a CDN such as Cloudflare in front of Caddy, with Caddy's
+`trusted_proxies` set to the CDN's ranges), set `TRUSTED_PROXY_HOPS=2`. Never
+expose port 3000 itself: without a proxy the app can't tell a made-up header
+from a real one.
 
 ### Caddy
 

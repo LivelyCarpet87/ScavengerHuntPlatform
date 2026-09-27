@@ -10,9 +10,12 @@ import { requireStaff } from "@/lib/auth/access";
 import { db } from "@/lib/db";
 import { tasks } from "@/lib/db/schema";
 import { formatCode } from "@/lib/ids";
+import { staffTitle } from "@/lib/staff/metadata";
 import { absoluteUrl, links } from "@/lib/url";
 
-export const metadata: Metadata = { title: "Checkpoint posters" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Checkpoint posters", { min: "organizer" });
+}
 
 export default async function CheckpointPostersPage({
   params,
@@ -38,6 +41,7 @@ export default async function CheckpointPostersPage({
       <PrintToolbar
         huntId={hunt.id}
         what="checkpoints"
+        taskIds={list.map((t) => t.id)}
         title={single ? `Checkpoint ${single.code} poster` : "Checkpoint posters"}
         summary={
           list.length === 0

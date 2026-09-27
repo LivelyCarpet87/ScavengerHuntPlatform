@@ -47,10 +47,10 @@ export function submissionBlockReason(
   now = new Date(),
 ): string | null {
   const phase = huntPhase(hunt, now);
-  if (phase === "upcoming") return "The hunt hasn't started yet.";
+  if (phase === "upcoming") return "The hunt hasn’t started yet.";
   if (phase === "ended" || phase === "archived") return "The hunt is over — submissions are closed.";
-  if (phase === "draft") return "This hunt isn't published yet.";
-  if (!isTaskVisible(task, now)) return "This task isn't available yet.";
+  if (phase === "draft") return "This hunt isn’t published yet.";
+  if (!isTaskVisible(task, now)) return "This task isn’t available yet.";
   if (task.lockAt && now >= task.lockAt) return "This task is closed.";
   return null;
 }

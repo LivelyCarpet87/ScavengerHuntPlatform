@@ -12,6 +12,7 @@ import {
   submissions,
   type Task,
   tasks,
+  teams,
 } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { isTaskVisible, submissionBlockReason } from "@/lib/hunts";
@@ -30,7 +31,9 @@ import { deleteFiles, storePoster, storeUpload, UploadError, type UploadKind } f
  *
  *   1. Idempotency first: a retry with the same clientId returns the original
  *      submission, even if the task has since closed or been completed.
- *   2. Is the task visible and open? Is the team allowed another try?
+ *   2. Is the task visible and open? Is the team allowed another try? Proof
+ *      that waited on a phone for signal counts if it was made while the task
+ *      was open and arrives within LATE_GRACE_MS of the close.
  *   3. Validate what was sent for the task's kind, store files, insert the row
  *      (re-checking the rules inside a write transaction so two phones on one
  *      team can't both slip through).
@@ -57,7 +60,21 @@ export type SubmitRequest = {
   lat: number | null;
   lng: number | null;
   accuracy: number | null;
+  /** When the request reached the server, before its body was read: the submission's time. */
+  receivedAt: Date;
+  /** How long it waited in the phone's upload queue, as the phone reports it (ms). */
+  queuedForMs: number | null;
+  /** The team the phone made it for; a phone that has moved team since can't send it for the new one. */
+  teamId: string | null;
 };
+
+/**
+ * Proof saved on a phone while a task was open still counts when the phone
+ * only finds signal after the task closed or the hunt ended, if it arrives
+ * within this long of the close. The phone says how long the proof waited;
+ * that claim is believed up to this much and no further.
+ */
+export const LATE_GRACE_MS = 10 * 60_000;
 
 export type SubmissionSummary = {
   id: string;
@@ -76,11 +93,19 @@ export type SubmitSuccess = {
   task: { id: string; code: number; title: string };
 };
 
+/**
+ * Refusals the offline queue handles on its own (lib/offline/queue.ts):
+ *   already_completed  the team already has this task (a teammate got there first); nothing to send
+ *   team_changed       the phone has moved to another team since it saved this; it can't be sent
+ */
+export type SubmitFailureCode = "already_completed" | "team_changed";
+
 export type SubmitFailure = {
   ok: false;
   /** HTTP status for the API response. */
   status: number;
   error: string;
+  code?: SubmitFailureCode;
   /** Only rate limits are worth retrying later; everything else needs a change. */
   retryable: boolean;
   retryAfterSec?: number;
@@ -109,12 +134,15 @@ function missingMediaMessage(task: Pick<Task, "mediaAccept">): string {
 /** Why the team can't send another submission for a standard task, given its history. */
 function historyBlock(
   task: Pick<Task, "kind" | "maxAttempts">,
-  rows: { status: SubmissionStatus }[],
-): { error: string } | { wrong: number } {
-  if (task.kind === "contest") return { wrong: 0 };
-  if (rows.some((r) => r.status === "approved")) return { error: "Your team already completed this task." };
+  rows: { status: SubmissionStatus; createdAt: Date }[],
+): { error: string; code?: SubmitFailureCode } | { wrong: number; lastWrongAt: Date | null } {
+  if (task.kind === "contest") return { wrong: 0, lastWrongAt: null };
+  if (rows.some((r) => r.status === "approved")) {
+    return { error: "Your team already completed this task.", code: "already_completed" };
+  }
   if (rows.some((r) => r.status === "pending")) return { error: "Your last submission is still being reviewed." };
-  const wrong = rows.filter((r) => r.status === "rejected").length;
+  const wrongRows = rows.filter((r) => r.status === "rejected");
+  const wrong = wrongRows.length;
   if (task.kind === "answer" && task.maxAttempts != null && wrong >= task.maxAttempts) {
     return {
       error:
@@ -123,7 +151,44 @@ function historyBlock(
           : `Your team has used all ${task.maxAttempts} attempts for this task.`,
     };
   }
-  return { wrong };
+  const lastWrongAt = wrongRows.reduce<Date | null>((a, r) => (!a || r.createdAt > a ? r.createdAt : a), null);
+  return { wrong, lastWrongAt };
+}
+
+/** Wrong answers a team can give freely on an instantly checked answer task. */
+const FREE_WRONG_ANSWERS = 10;
+
+/**
+ * After FREE_WRONG_ANSWERS wrong answers, each further guess waits this long
+ * after the last one (a minute, then five after twice as many), so a short
+ * answer like a year or a PIN can't be found by trying them all, even on a
+ * task without an attempt limit. Teams solving honestly rarely get here.
+ */
+function wrongAnswerCooldownMs(wrong: number): number {
+  if (wrong < FREE_WRONG_ANSWERS) return 0;
+  return wrong < 2 * FREE_WRONG_ANSWERS ? 60_000 : 5 * 60_000;
+}
+
+/** When the proof was made as far as the rules go: its arrival, less the time it says it waited (capped). */
+function madeAt(req: Pick<SubmitRequest, "receivedAt" | "queuedForMs">): Date {
+  const waited = Math.min(Math.max(0, req.queuedForMs ?? 0), LATE_GRACE_MS);
+  return new Date(req.receivedAt.getTime() - waited);
+}
+
+/** The refusal for proof saved on this phone for a team it has since left. */
+async function teamChanged(huntId: string, savedFor: string, current: string): Promise<SubmitFailure> {
+  const team = await db
+    .select({ name: teams.name })
+    .from(teams)
+    .where(and(eq(teams.id, savedFor), eq(teams.huntId, huntId)))
+    .get();
+  return failure(
+    409,
+    team
+      ? `This was saved for ${team.name}, but this phone is now on ${current}, so it can’t be sent.`
+      : `This was saved for a team this phone is no longer on, so it can’t be sent for ${current}.`,
+    { code: "team_changed" },
+  );
 }
 
 async function wrongAttempts(teamId: string, taskId: string): Promise<number> {
@@ -200,6 +265,8 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
   const clientId = req.clientId.trim();
   if (!CLIENT_ID.test(clientId)) return failure(400, "This upload is missing its id. Reload the page and try again.");
   if (!req.taskId) return failure(400, "Choose a task first.");
+  // Proof belongs to the team it was made for, even if this phone has joined another since.
+  if (req.teamId && req.teamId !== teamId) return teamChanged(hunt.id, req.teamId, me.team.name);
 
   // 1. A retry of something we already have: answer with the original outcome.
   const existing = await db
@@ -217,10 +284,10 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
     return summarize(existing, task, { duplicate: true });
   }
 
-  // 2. Is the task open to this team right now?
-  if (!task || !isTaskVisible(task)) return failure(404, "This task isn't available.");
-  const blocked = submissionBlockReason(hunt, task);
-  if (blocked) return failure(403, blocked);
+  // 2. Is the task open to this team — now, or when the phone saved it while waiting for signal?
+  if (!task || !isTaskVisible(task, req.receivedAt)) return failure(404, "This task isn’t available.");
+  const blocked = submissionBlockReason(hunt, task, req.receivedAt);
+  if (blocked && submissionBlockReason(hunt, task, madeAt(req))) return failure(403, blocked);
 
   const text = req.text?.trim() ? req.text.trim() : null;
   if (text && text.length > MAX_TEXT)
@@ -238,7 +305,7 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
   if (task.kind === "answer") {
     const limit = rateLimit(`answer:${teamId}:${task.id}`, 10, 60_000);
     if (!limit.ok) {
-      return failure(429, `That's a lot of guesses. Try again in ${limit.retryAfterSec} s.`, {
+      return failure(429, `That’s a lot of guesses. Try again in ${limit.retryAfterSec} s.`, {
         retryable: true,
         retryAfterSec: limit.retryAfterSec,
       });
@@ -269,7 +336,7 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
       const parsed = text ? parseCheckpointInput(text) : null;
       if (!text) return failure(400, "Enter the code from the checkpoint poster.");
       if (!parsed || !task.checkpointCode || parsed.code !== normalizeCode(task.checkpointCode)) {
-        return failure(422, "That code doesn't match this checkpoint.");
+        return failure(422, "That code doesn’t match this checkpoint.");
       }
       storedText = parsed.code;
       break;
@@ -287,11 +354,21 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
 
   // Cheap rejection before anything touches the disk; re-checked in the transaction below.
   const history = await db
-    .select({ status: submissions.status })
+    .select({ status: submissions.status, createdAt: submissions.createdAt })
     .from(submissions)
     .where(and(eq(submissions.teamId, teamId), eq(submissions.taskId, task.id)));
   const pre = historyBlock(task, history);
-  if ("error" in pre) return failure(409, pre.error);
+  if ("error" in pre) return failure(409, pre.error, pre.code ? { code: pre.code } : {});
+  if (task.kind === "answer" && task.answers.length > 0 && pre.lastWrongAt) {
+    const waitMs = wrongAnswerCooldownMs(pre.wrong) - (req.receivedAt.getTime() - pre.lastWrongAt.getTime());
+    if (waitMs > 0) {
+      const retryAfterSec = Math.ceil(waitMs / 1000);
+      return failure(429, `That’s a lot of wrong answers. Your team can answer again in ${retryAfterSec} s.`, {
+        retryable: true,
+        retryAfterSec,
+      });
+    }
+  }
 
   // 4. Decide now when the system can.
   let status: SubmissionStatus = "pending";
@@ -340,7 +417,7 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
   } catch (err) {
     await deleteFiles(stored).catch(() => {});
     if (err instanceof UploadError) {
-      const status = /too large/i.test(err.message) ? 413 : /isn't supported/i.test(err.message) ? 415 : 400;
+      const status = /too large/i.test(err.message) ? 413 : /isn[’']t supported/i.test(err.message) ? 415 : 400;
       return failure(status, err.message);
     }
     throw err;
@@ -350,7 +427,7 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
   let outcome:
     | { kind: "created"; row: Submission; wrongBefore: number }
     | { kind: "duplicate"; row: Submission }
-    | { kind: "blocked"; error: string };
+    | { kind: "blocked"; error: string; code?: SubmitFailureCode };
   try {
     // libSQL opens write transactions with BEGIN IMMEDIATE, so this check-then-insert is serialized.
     outcome = await db.transaction(async (tx) => {
@@ -361,11 +438,11 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
         .get();
       if (dup) return { kind: "duplicate" as const, row: dup };
       const rows = await tx
-        .select({ status: submissions.status })
+        .select({ status: submissions.status, createdAt: submissions.createdAt })
         .from(submissions)
         .where(and(eq(submissions.teamId, teamId), eq(submissions.taskId, task.id)));
       const check = historyBlock(task, rows);
-      if ("error" in check) return { kind: "blocked" as const, error: check.error };
+      if ("error" in check) return { kind: "blocked" as const, error: check.error, code: check.code };
       const lastTry = correct === false && task.maxAttempts != null && check.wrong + 1 >= task.maxAttempts;
       const feedback =
         correct === true
@@ -392,7 +469,8 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
           lat: req.lat,
           lng: req.lng,
           accuracy: req.accuracy,
-          createdAt: now,
+          // Solve order goes by when the proof reached us, not by how long storing it took.
+          createdAt: req.receivedAt,
         })
         .returning();
       return { kind: "created" as const, row, wrongBefore: check.wrong };
@@ -404,7 +482,7 @@ export async function submitProof(req: SubmitRequest): Promise<SubmitResult> {
 
   if (outcome.kind !== "created") {
     await deleteFiles(stored).catch(() => {});
-    if (outcome.kind === "blocked") return failure(409, outcome.error);
+    if (outcome.kind === "blocked") return failure(409, outcome.error, outcome.code ? { code: outcome.code } : {});
     if (outcome.row.taskId !== task.id) return failure(409, "This upload id was already used for another task.");
     return summarize(outcome.row, task, { duplicate: true });
   }

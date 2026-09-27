@@ -18,6 +18,12 @@ export const UNDO_WINDOW_MS = 6_000;
  */
 export const PUSH_DELAY_MS = UNDO_WINDOW_MS + 2_500;
 
+/** Waiting submissions the judging queue loads at a time (it offers more on request). */
+export const QUEUE_PAGE_SIZE = 40;
+
+/** The most the judging queue loads, however far a judge pages. */
+export const QUEUE_MAX = 400;
+
 /** Submissions per page in the submissions browser. */
 export const SUBMISSIONS_PAGE_SIZE = 50;
 

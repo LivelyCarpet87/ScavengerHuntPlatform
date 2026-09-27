@@ -11,10 +11,13 @@ import { requireStaff } from "@/lib/auth/access";
 import { plural } from "@/lib/format";
 import { huntPhase } from "@/lib/hunts";
 import { deleteAnnouncementAction, setAnnouncementPinnedAction } from "@/lib/staff/announcement-actions";
+import { staffTitle } from "@/lib/staff/metadata";
 import { getHuntStats, listAnnouncements, pushReach } from "@/lib/staff/queries";
 import { plainText } from "@/lib/staff/text";
 
-export const metadata: Metadata = { title: "Announcements" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Announcements", { min: "organizer" });
+}
 
 /** How screen readers tell the announcements' buttons apart: the title, or the start of the message. */
 function announcementName(a: { title: string | null; body: string }) {

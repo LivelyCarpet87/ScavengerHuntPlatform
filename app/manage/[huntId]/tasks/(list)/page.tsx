@@ -2,6 +2,7 @@ import { CircleCheck, Plus, Printer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LiveRefresh } from "@/components/live/live-refresh";
+import { ArchivedNotice } from "@/components/staff/archived-notice";
 import { TaskList, type TaskRowData } from "@/components/staff/task-list";
 import { ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -11,6 +12,8 @@ import { formatPoints, plural } from "@/lib/format";
 import { type HuntPhase, huntPhase } from "@/lib/hunts";
 import { getStandings } from "@/lib/scoring/service";
 import { maxTaskPoints, scoringSummary, taskTiming } from "@/lib/staff/format";
+import { isArchived } from "@/lib/staff/guards";
+import { staffTitle } from "@/lib/staff/metadata";
 import { auditData, hintCounts, listTasks } from "@/lib/staff/queries";
 import { kindLabel } from "@/lib/tasks";
 
@@ -22,7 +25,9 @@ function createdVisibility(hidden: boolean, phase: HuntPhase): string {
   return "The hunt is over, so players can’t submit to it.";
 }
 
-export const metadata: Metadata = { title: "Tasks" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Tasks", { min: "organizer" });
+}
 
 export default async function TasksPage({
   params,
@@ -41,6 +46,7 @@ export default async function TasksPage({
     sp.deleted ? auditData(hunt.id, "task.delete", sp.deleted) : null,
   ]);
   const now = new Date();
+  const readOnly = isArchived(hunt);
 
   const rows: TaskRowData[] = list.map((t) => {
     const scoring = scoringSummary(t);
@@ -68,7 +74,7 @@ export default async function TasksPage({
   const deleted = deletedData ? `${String(deletedData.code ?? "")} “${String(deletedData.title ?? "")}”`.trim() : null;
 
   return (
-    <div className="flex flex-col gap-6 pb-24 md:pb-0">
+    <div className={readOnly ? "flex flex-col gap-6" : "flex flex-col gap-6 pb-24 md:pb-0"}>
       <LiveRefresh huntId={hunt.id} on={["tasks.changed", "scores.changed"]} />
       <PageHeader
         title="Tasks"
@@ -85,10 +91,12 @@ export default async function TasksPage({
                 Print checkpoint posters
               </ButtonLink>
             ) : null}
-            <ButtonLink href={`/manage/${hunt.id}/tasks/new`} className="hidden md:inline-flex">
-              <Plus aria-hidden />
-              New task
-            </ButtonLink>
+            {readOnly ? null : (
+              <ButtonLink href={`/manage/${hunt.id}/tasks/new`} className="hidden md:inline-flex">
+                <Plus aria-hidden />
+                New task
+              </ButtonLink>
+            )}
           </>
         }
       />
@@ -116,29 +124,39 @@ export default async function TasksPage({
           Its submissions and files are gone, and scores have been recalculated.
         </Notice>
       ) : null}
+      {readOnly ? <ArchivedNotice huntId={hunt.id} /> : null}
 
       {rows.length === 0 ? (
-        <EmptyState
-          title="No tasks yet"
-          action={
-            <ButtonLink href={`/manage/${hunt.id}/tasks/new`}>
-              <Plus aria-hidden />
-              Add the first task
-            </ButtonLink>
-          }
-        >
-          Add the first one — most hunts use 10 to 15. Quick photo tasks are the easiest place to start.
-        </EmptyState>
+        readOnly ? (
+          <EmptyState title="No tasks">This hunt was archived without any tasks.</EmptyState>
+        ) : (
+          <EmptyState
+            title="No tasks yet"
+            action={
+              <ButtonLink href={`/manage/${hunt.id}/tasks/new`}>
+                <Plus aria-hidden />
+                Add the first task
+              </ButtonLink>
+            }
+          >
+            Add the first one — most hunts use 10 to 15. Quick photo tasks are the easiest place to start.
+          </EmptyState>
+        )
       ) : (
-        <TaskList huntId={hunt.id} rows={rows} />
+        <TaskList huntId={hunt.id} rows={rows} readOnly={readOnly} />
       )}
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden">
-        <ButtonLink href={`/manage/${hunt.id}/tasks/new`} size="lg" className="w-full">
-          <Plus aria-hidden />
-          New task
-        </ButtonLink>
-      </div>
+      {readOnly ? null : (
+        <div
+          data-bottom-bar
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden"
+        >
+          <ButtonLink href={`/manage/${hunt.id}/tasks/new`} size="lg" className="w-full">
+            <Plus aria-hidden />
+            New task
+          </ButtonLink>
+        </div>
+      )}
     </div>
   );
 }

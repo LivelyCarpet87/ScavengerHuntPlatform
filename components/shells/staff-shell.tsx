@@ -1,9 +1,10 @@
 import { ArrowLeft, LogOut, MonitorPlay, Smartphone } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { SignOutForm } from "@/components/auth/sign-out-form";
 import { StaffLive } from "@/components/live/staff-live";
 import { LogoMark } from "@/components/ui/control";
-import { signOutAction } from "@/lib/auth/actions";
+import { TimeZoneProvider } from "@/components/ui/datetime-field";
 import type { Hunt, StaffRole, User } from "@/lib/db/schema";
 import { huntPhase } from "@/lib/hunts";
 import { cn } from "@/lib/utils";
@@ -47,14 +48,14 @@ function ShellFooter({ hunt, user }: { hunt: Pick<Hunt, "slug">; user: Pick<User
     <div className="flex flex-col gap-1">
       <Link
         href={`/h/${hunt.slug}`}
-        className="flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-ink-2 hover:bg-mist-2 hover:text-ink"
+        className="flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-ink-2 hover:bg-mist-2 hover:text-ink md:h-9"
       >
         <Smartphone className="size-4" aria-hidden /> Player view
       </Link>
       <Link
         href={`/h/${hunt.slug}/screen`}
         target="_blank"
-        className="flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium text-ink-2 hover:bg-mist-2 hover:text-ink"
+        className="flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-ink-2 hover:bg-mist-2 hover:text-ink md:h-9"
       >
         <MonitorPlay className="size-4" aria-hidden /> Big screen
       </Link>
@@ -63,16 +64,16 @@ function ShellFooter({ hunt, user }: { hunt: Pick<Hunt, "slug">; user: Pick<User
           <p className="truncate text-sm font-semibold">{user.name}</p>
           <p className="truncate text-xs text-ink-3">{user.email}</p>
         </div>
-        <form action={signOutAction}>
+        <SignOutForm>
           <button
             type="submit"
-            className="grid size-9 place-items-center rounded-md text-ink-2 hover:bg-mist-2 hover:text-ink"
+            className="grid size-11 place-items-center rounded-md text-ink-2 hover:bg-mist-2 hover:text-ink md:size-9"
             aria-label="Sign out"
             title="Sign out"
           >
-            <LogOut className="size-4" />
+            <LogOut className="size-4" aria-hidden />
           </button>
-        </form>
+        </SignOutForm>
       </div>
     </div>
   );
@@ -89,22 +90,40 @@ export function StaffShell({
   pending,
   children,
 }: {
-  hunt: Pick<Hunt, "id" | "name" | "slug" | "status" | "startsAt" | "endsAt" | "accent">;
+  hunt: Pick<Hunt, "id" | "name" | "slug" | "status" | "startsAt" | "endsAt" | "accent" | "timezone">;
   role: StaffRole;
   user: Pick<User, "name" | "email">;
   /** Submissions waiting for review. */
   pending: number;
   children: ReactNode;
 }) {
+  const bar = (
+    <>
+      <Link
+        href="/dashboard"
+        className="grid size-11 shrink-0 place-items-center rounded-md hover:bg-mist"
+        aria-label="Your hunts"
+      >
+        <LogoMark size={24} />
+      </Link>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-cond text-lg leading-tight font-extrabold">{hunt.name}</p>
+      </div>
+      <HuntPhaseChip hunt={hunt} />
+    </>
+  );
   return (
     <div data-accent={hunt.accent} className="min-h-dvh md:grid md:grid-cols-[16rem_minmax(0,1fr)] print:block">
-      <aside className="sticky top-(--banner-h) hidden h-[calc(100dvh-var(--banner-h))] flex-col border-r border-line bg-mist px-3 py-4 md:flex print:hidden">
+      <aside
+        aria-label={hunt.name}
+        className="sticky top-(--banner-h) hidden h-[calc(100dvh-var(--banner-h))] flex-col overflow-y-auto border-r border-line bg-mist px-3 py-4 md:flex print:hidden"
+      >
         <Link
           href="/dashboard"
           className="flex items-center gap-2 px-3 text-sm font-semibold text-ink-2 hover:text-ink"
         >
           <ArrowLeft className="size-4" aria-hidden />
-          All hunts
+          Your hunts
         </Link>
         <div className="mt-4 mb-5 px-3">
           <p className="font-cond text-2xl leading-tight font-extrabold tracking-tight">{hunt.name}</p>
@@ -118,26 +137,22 @@ export function StaffShell({
 
       <div className="min-w-0">
         <header className="sticky top-(--banner-h) z-40 flex h-14 items-center gap-2 border-b border-line bg-paper/95 px-2 pt-safe backdrop-blur md:hidden print:hidden">
-          <Link
-            href="/dashboard"
-            className="grid size-11 place-items-center rounded-md hover:bg-mist"
-            aria-label="All hunts"
-          >
-            <LogoMark size={24} />
-          </Link>
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-cond text-lg leading-tight font-extrabold">{hunt.name}</p>
-          </div>
-          <HuntPhaseChip hunt={hunt} />
+          {bar}
           <StaffMobileMenu
             huntId={hunt.id}
             role={role}
             pending={pending}
+            bar={bar}
             footer={<ShellFooter hunt={hunt} user={user} />}
           />
         </header>
-        <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8 print:max-w-none print:p-0">
-          {children}
+        <main
+          id="main"
+          tabIndex={-1}
+          className="mx-auto w-full max-w-6xl px-4 py-6 outline-none md:px-8 md:py-8 print:max-w-none print:p-0"
+        >
+          {/* Date fields on staff pages are entered in the hunt's own time zone. */}
+          <TimeZoneProvider timeZone={hunt.timezone}>{children}</TimeZoneProvider>
         </main>
         <StaffLive huntId={hunt.id} />
       </div>

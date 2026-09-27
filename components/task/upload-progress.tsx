@@ -1,20 +1,29 @@
 "use client";
 
+import type { Ref } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
 import type { SubmitPhase } from "./use-submitter";
 
-/** Upload progress with percentage and a cancel button, for the task page's action bar. */
+/**
+ * Upload progress with percentage and a cancel button, for the task page's
+ * action bar. The form moves focus here when its Submit button gives way to
+ * it: to Cancel while there's something to cancel, else to the bar itself.
+ */
 export function UploadProgress({
   phase,
   what,
   onCancel,
+  ref,
+  cancelRef,
 }: {
   phase: SubmitPhase;
   /** "your photo", "2 photos", "your entry" */
   what: string;
   onCancel: () => void;
+  ref?: Ref<HTMLDivElement>;
+  cancelRef?: Ref<HTMLButtonElement>;
 }) {
   if (phase.kind === "idle") return null;
   const uploading = phase.kind === "uploading";
@@ -26,7 +35,7 @@ export function UploadProgress({
         ? "Almost done"
         : `Uploading ${what}`;
   return (
-    <div className="flex items-center gap-3">
+    <div ref={ref} tabIndex={-1} className="flex items-center gap-3 outline-none">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-3 text-sm">
           <span className="flex min-w-0 items-center gap-2 truncate font-semibold">
@@ -53,7 +62,7 @@ export function UploadProgress({
         </div>
       </div>
       {phase.kind === "uploading" || phase.kind === "preparing" ? (
-        <Button variant="secondary" onClick={onCancel} className="shrink-0">
+        <Button ref={cancelRef} variant="secondary" onClick={onCancel} className="shrink-0">
           Cancel
         </Button>
       ) : null}

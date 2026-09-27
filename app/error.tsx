@@ -26,7 +26,11 @@ export default function ErrorPage({ error, retry }: { error: Error & { digest?: 
           </Link>
         </div>
       </header>
-      <main className="mx-auto flex max-w-md flex-col items-center px-4 pt-14 pb-20 text-center">
+      <main
+        id="main"
+        tabIndex={-1}
+        className="mx-auto flex max-w-md flex-col items-center px-4 pt-14 pb-20 text-center outline-none"
+      >
         <Mascot size={112} />
         <h1 className="mt-6 font-cond text-5xl font-extrabold tracking-tight">This page didn't load</h1>
         <p className="mt-3 text-ink-2">

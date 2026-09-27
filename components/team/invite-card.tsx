@@ -12,10 +12,13 @@ import { cn } from "@/lib/utils";
 export async function InviteCard({
   hunt,
   team,
+  hint = "Teammates scan the QR code, open your invite link, or type the code under “Join a team”.",
   className,
 }: {
   hunt: Pick<Hunt, "slug" | "name">;
   team: Pick<Team, "name" | "code">;
+  /** How teammates use it (under the code). */
+  hint?: string;
   className?: string;
 }) {
   const path = links.teamInvite(hunt.slug, team.code);
@@ -31,9 +34,7 @@ export async function InviteCard({
       <div className="min-w-0">
         <p className="text-sm font-semibold text-ink-2">Team code</p>
         <p className="mt-1 font-bib text-6xl leading-none tracking-[0.04em] sm:text-7xl">{code}</p>
-        <p className="mt-3 max-w-xs text-sm text-ink-2">
-          Teammates scan the QR code, open your invite link, or type the code under “Join a team”.
-        </p>
+        <p className="mt-3 max-w-xs text-sm text-ink-2">{hint}</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <ShareButton
             url={path}

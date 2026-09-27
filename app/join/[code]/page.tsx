@@ -11,7 +11,8 @@ export const metadata: Metadata = { title: "Join a hunt" };
 /**
  * /join/482913 — where hunt posters and QR codes point. A known code goes
  * straight to the hunt (carrying the code, so registration doesn't ask for
- * it again); anything else gets the code entry with a clear error.
+ * it again); anything else gets the usual code entry, with the problem said
+ * once, right under the digits.
  */
 export default async function JoinCodePage({ params }: { params: Promise<{ code: string }> }) {
   const { code: raw } = await params;
@@ -36,8 +37,6 @@ export default async function JoinCodePage({ params }: { params: Promise<{ code:
       <SiteHeader />
       <main className="pb-16">
         <CodeHero
-          title="Check the hunt code"
-          lead="That link didn’t open a hunt. Type the six digits from the poster or your organizer."
           defaultCode={code ?? sanitizeCodeTyping(decoded)}
           error={error}
           autoFocus

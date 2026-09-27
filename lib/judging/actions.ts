@@ -10,7 +10,7 @@ import { audit } from "@/lib/audit";
 import { getStaffRole, requireStaff } from "@/lib/auth/access";
 import { getSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
-import { adjustments, files, type Hunt, submissions, tasks, teams, users } from "@/lib/db/schema";
+import { adjustments, files, type Hunt, submissions, tasks, teams, type User, users } from "@/lib/db/schema";
 import { formatRelative, formatSigned } from "@/lib/format";
 import { getHuntById } from "@/lib/hunts";
 import { notifyTeam } from "@/lib/push";
@@ -142,6 +142,26 @@ const JudgeSchema = z.object({
 
 export type JudgeInput = z.input<typeof JudgeSchema>;
 
+type LostAccess = { ok: false; error: string; lostAccess: true };
+
+/**
+ * The caller's staff identity for a decision, or why they can't decide
+ * anymore. Unlike requireStaff it never throws: the queue calls these
+ * actions directly, and a thrown notFound() or redirect would reach the judge
+ * as a network error ("Couldn’t reach the server") instead of the reason.
+ */
+async function deciderFor(huntId: string): Promise<{ user: User; hunt: Hunt } | LostAccess> {
+  const current = await getSession();
+  if (!current?.user) {
+    return { ok: false, lostAccess: true, error: "You’re signed out. Sign in again to keep judging." };
+  }
+  const [role, hunt] = await Promise.all([getStaffRole(huntId), getHuntById(huntId)]);
+  // Checked before the hunt, so this can't be used to find out which hunts exist.
+  if (!role) return { ok: false, lostAccess: true, error: "You’re no longer on this hunt’s staff." };
+  if (!hunt) return { ok: false, lostAccess: true, error: "This hunt was deleted." };
+  return { user: current.user, hunt };
+}
+
 /** Approve or reject a submission (also used to re-judge one that was already decided). */
 export async function judgeSubmission(input: JudgeInput): Promise<JudgeResult> {
   const parsed = JudgeSchema.safeParse(input);
@@ -155,7 +175,9 @@ export async function judgeSubmission(input: JudgeInput): Promise<JudgeResult> {
     };
   }
   const data = parsed.data;
-  const { user, hunt } = await requireStaff(data.huntId, "judge");
+  const access = await deciderFor(data.huntId);
+  if ("error" in access) return access;
+  const { user, hunt } = access;
   if (hunt.status === "archived") return { ok: false, error: ARCHIVED };
 
   const row = await loadSubmission(hunt.id, data.submissionId);
@@ -286,7 +308,9 @@ export async function revertJudgement(input: z.input<typeof RevertSchema>): Prom
   const parsed = RevertSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
   const data = parsed.data;
-  const { user, hunt } = await requireStaff(data.huntId, "judge");
+  const access = await deciderFor(data.huntId);
+  if ("error" in access) return access;
+  const { user, hunt } = access;
   if (hunt.status === "archived") return { ok: false, error: ARCHIVED };
 
   const row = await loadSubmission(hunt.id, data.submissionId);
@@ -389,7 +413,7 @@ export async function claimSubmission(input: z.input<typeof ClaimSchema>): Promi
   if (!parsed.success) return { ok: false, error: firstIssue(parsed.error) };
   const { huntId, submissionId, releaseId } = parsed.data;
   const staff = await quietStaff(huntId);
-  if (!staff) return { ok: false, error: "You’re not judging this hunt anymore." };
+  if (!staff) return { ok: false, lostAccess: true, error: "You’re no longer on this hunt’s staff." };
   const { user, hunt } = staff;
 
   if (releaseId && releaseId !== submissionId) {

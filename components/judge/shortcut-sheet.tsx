@@ -2,7 +2,9 @@
 
 import { Fragment } from "react";
 import { Dialog } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/field";
 import { Kbd } from "@/components/ui/misc";
+import { cn } from "@/lib/utils";
 
 /** Each row: alternative key combinations (joined with "or"), each a list of keys pressed together. */
 type Row = { keys: string[][]; what: string };
@@ -14,6 +16,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: [["A"]], what: "Approve" },
       { keys: [["R"]], what: "Reject" },
       { keys: [["S"]], what: "Skip for now" },
+      { keys: [["Enter"]], what: "Approve from the points or measured value field" },
       { keys: [["Ctrl", "Enter"]], what: "Approve while typing (⌘ Enter on a Mac)" },
       { keys: [["U"], ["Ctrl", "Z"]], what: "Undo the last decision" },
     ],
@@ -24,6 +27,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
       { keys: [["J"], ["↓"]], what: "Next in the queue" },
       { keys: [["K"], ["↑"]], what: "Previous in the queue" },
       { keys: [["←"], ["→"]], what: "Other photos in the same submission" },
+      { keys: [["←"], ["↑"], ["↓"], ["→"]], what: "Look around a zoomed-in photo" },
     ],
   },
   {
@@ -37,6 +41,9 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     ],
   },
 ];
+
+/** Letters, digits and "?": the keys WCAG 2.1.4 asks to be able to turn off. */
+const isCharacterKey = (combo: string[]) => combo.length === 1 && /^[A-Z0-9?]$/.test(combo[0]);
 
 function Keys({ keys, range }: { keys: string[][]; range: boolean }) {
   return (
@@ -57,31 +64,59 @@ function Keys({ keys, range }: { keys: string[][]; range: boolean }) {
   );
 }
 
-export function ShortcutSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ShortcutSheet({
+  open,
+  onClose,
+  singleKeys,
+  onSingleKeysChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Whether single-key shortcuts (letters, digits, ?) are on. */
+  singleKeys: boolean;
+  onSingleKeysChange: (on: boolean) => void;
+}) {
   return (
     <Dialog
       open={open}
       onClose={onClose}
       title="Keyboard shortcuts"
-      description="Shortcuts pause while you type in a field."
+      description="Shortcuts pause while you type. In the points and value fields, Enter, A and R still decide."
       className="sm:max-w-2xl"
     >
-      <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
-        {GROUPS.map((group) => (
-          <section key={group.title} className={group.title === "Write" ? "sm:col-span-2" : undefined}>
-            <h3 className="mb-2 font-semibold">{group.title}</h3>
-            <dl className="divide-y divide-line border-y border-line">
-              {group.rows.map((row) => (
-                <div key={row.what} className="flex items-center justify-between gap-4 py-2">
-                  <dt className="text-sm text-ink">{row.what}</dt>
-                  <dd className="shrink-0">
-                    <Keys keys={row.keys} range={row.keys[0]?.[0] === "1"} />
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        ))}
+      <div className="flex flex-col gap-6">
+        <Switch
+          role="switch"
+          label="Single-key shortcuts"
+          hint="Letter and number keys. Turn them off for speech input, or so a stray key can’t decide. Arrow keys and Ctrl shortcuts keep working."
+          checked={singleKeys}
+          onChange={(e) => onSingleKeysChange(e.currentTarget.checked)}
+          className="rounded-lg bg-mist px-4 py-3"
+        />
+        <div className="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+          {GROUPS.map((group) => (
+            <section key={group.title} className={group.title === "Write" ? "sm:col-span-2" : undefined}>
+              <h3 className="mb-2 font-semibold">{group.title}</h3>
+              <dl className="divide-y divide-line border-y border-line">
+                {group.rows.map((row) => {
+                  const keys = singleKeys ? row.keys : row.keys.filter((combo) => !isCharacterKey(combo));
+                  return (
+                    <div key={row.what} className="flex items-center justify-between gap-4 py-2">
+                      <dt className={cn("text-sm", keys.length > 0 ? "text-ink" : "text-ink-3")}>{row.what}</dt>
+                      <dd className="shrink-0">
+                        {keys.length > 0 ? (
+                          <Keys keys={keys} range={keys[0]?.[0] === "1"} />
+                        ) : (
+                          <span className="text-xs text-ink-3">Off</span>
+                        )}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            </section>
+          ))}
+        </div>
       </div>
     </Dialog>
   );

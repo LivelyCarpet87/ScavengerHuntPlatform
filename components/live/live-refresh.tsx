@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef } from "react";
 import type { HuntEventType } from "@/lib/realtime/bus";
+import { paceFor, requestRefresh, useRefreshWhenBack } from "./refresh";
 import { useHuntEvents } from "./use-hunt-events";
 
 /**
@@ -11,45 +11,28 @@ import { useHuntEvents } from "./use-hunt-events";
  * back into view after being hidden (phones drop connections when locked).
  *
  *   <LiveRefresh huntId={hunt.id} on={["submission.judged", "scores.changed"]} />
+ *
+ * Refreshes are shared by the whole tab (see ./refresh.ts): what concerns the
+ * viewer's own team or the whole hunt re-renders within a second; other
+ * teams' score and team changes at most every 15 s; hidden tabs wait until
+ * they are looked at.
  */
 export function LiveRefresh({
   huntId,
   on,
-  debounceMs = 600,
 }: {
   huntId: string;
   /** Event types that trigger a refresh. Omit for all. */
   on?: HuntEventType[];
-  debounceMs?: number;
 }) {
   const router = useRouter();
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const hiddenAt = useRef<number | null>(null);
-
-  const schedule = () => {
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => router.refresh(), debounceMs);
-  };
-
-  useHuntEvents(huntId, (event) => {
-    if (!on || on.includes(event.type)) schedule();
-  });
-
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") {
-        hiddenAt.current = Date.now();
-      } else if (hiddenAt.current && Date.now() - hiddenAt.current > 15_000) {
-        hiddenAt.current = null;
-        router.refresh();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      clearTimeout(timer.current);
-    };
-  }, [router]);
-
+  useRefreshWhenBack(router);
+  useHuntEvents(
+    huntId,
+    (event) => {
+      if (!on || on.includes(event.type)) requestRefresh(router, paceFor(event));
+    },
+    { onResync: () => requestRefresh(router) },
+  );
   return null;
 }

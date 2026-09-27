@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { files } from "@/lib/db/schema";
 import { canViewFile } from "@/lib/files-access";
-import { type Variant, variantPath } from "@/lib/storage";
+import { isClean, type Variant, variantPath } from "@/lib/storage";
 
 const VARIANTS: Variant[] = ["original", "display", "thumb", "poster"];
 
@@ -21,9 +21,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
   const { id, variant } = await ctx.params;
   if (!VARIANTS.includes(variant as Variant)) return notFound();
   const file = await db.select().from(files).where(eq(files.id, id)).get();
-  if (!file || !(await canViewFile(file))) return notFound();
-
+  if (!file) return notFound();
+  // A missing derivative falls back to the original, so check access for what is actually served.
   const v: Variant = variant === "original" || file.variants.includes(variant) ? (variant as Variant) : "original";
+  if (!(await canViewFile(file, v))) return notFound();
   const p = variantPath(file, v);
   let size: number;
   try {
@@ -32,7 +33,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string;
     return notFound();
   }
 
-  const etag = `"${file.id}-${v}"`;
+  // Originals stored before uploads were cleaned change once (lib/storage.ts cleanStoredUploads).
+  const etag = `"${file.id}-${v}${v === "original" && isClean(file) ? "-clean" : ""}"`;
   const headers = new Headers({
     "Content-Type": v === "original" ? file.mime : "image/webp",
     "Accept-Ranges": "bytes",

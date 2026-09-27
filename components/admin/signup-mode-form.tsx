@@ -13,6 +13,7 @@ export function SignupModeForm({ mode }: { mode: SignupMode }) {
     <form action={action} className="flex flex-col gap-4">
       <ChoiceCards
         name="mode"
+        label="Organizer sign-up"
         defaultValue={mode}
         options={[
           {

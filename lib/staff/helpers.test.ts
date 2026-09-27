@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { TASK_KINDS } from "@/lib/db/schema";
 import { formatDateTime } from "@/lib/format";
-import { placementLadder } from "@/lib/scoring/engine";
+import { decayValue, placementLadder } from "@/lib/scoring/engine";
 import { HUNT_TEMPLATES, templateSummaries } from "@/lib/templates";
 import { setupSteps } from "./checklist";
 import { coursePoints, MAX_COURSE_CONTROLS } from "./course";
-import { curveValues, describeCurve, describeLadder, formatSchedule, scoringSummary, taskTiming } from "./format";
+import { earningSubmissions } from "./earning";
+import {
+  curveLabel,
+  curvePoints,
+  curveValues,
+  describeCurve,
+  describeLadder,
+  formatSchedule,
+  scoringSummary,
+  taskTiming,
+} from "./format";
 import { formLevel, linkish, tidySlug } from "./forms";
 import { listSentence, parseLines, parseTeamNames, plainText, teamNameKey } from "./text";
 
@@ -49,8 +59,17 @@ describe("parseLines and patterns", () => {
     expect(plainText("**Clock tower** opens at [21:00](https://x.y).\n\n- Bring a torch")).toBe(
       "Clock tower opens at 21:00. Bring a torch",
     );
-    expect(plainText("# Heads up\nControl _41_ unlocks soon")).toBe("Heads up Control 41 unlocks soon");
+    expect(plainText("# Heads up\nControl _41_ unlocks soon")).toBe("Heads up. Control 41 unlocks soon");
     expect(plainText("a".repeat(300)).length).toBe(180);
+  });
+
+  test("list items and paragraphs stay separate sentences; wrapped lines join", () => {
+    expect(plainText("The **finish** moved to the fountain.\n\n- Bring your phones\n- Be there by 21:00")).toBe(
+      "The finish moved to the fountain. Bring your phones. Be there by 21:00",
+    );
+    expect(plainText("1. Go north\n2. Turn left!\n3. Look up")).toBe("Go north. Turn left! Look up");
+    expect(plainText("Bring:\n- a torch\n- water")).toBe("Bring: a torch, water");
+    expect(plainText("Meet at the\nfountain at 9")).toBe("Meet at the fountain at 9");
   });
 
   test("lists read naturally", () => {
@@ -77,6 +96,34 @@ describe("scoring previews", () => {
     expect(describeCurve({ ...race, scoring: "fixed" })).toBe("Every team that solves it earns 150.");
   });
 
+  test("curves longer than 20 solves are sampled, with real solve counts down to the minimum", () => {
+    const long = { scoring: "race" as const, points: 150, minPoints: 60, decaySolves: 30 };
+    expect(describeCurve(long)).toBe("1st: 150, 2nd: 150 … 30th+: 60");
+    expect(describeCurve({ ...long, scoring: "rarity" })).toBe(
+      "1 team: 150 each, 2 teams: 150 each … 30+ teams: 60 each",
+    );
+    const points = curvePoints(long);
+    expect(points.length).toBe(20);
+    expect(points[0]).toEqual({ solves: 1, value: 150 });
+    expect(points[points.length - 1]).toEqual({ solves: 30, value: 60 });
+    for (const [i, p] of points.entries()) {
+      expect(p.value).toBe(decayValue(p.solves, 150, 60, 30));
+      if (i > 0) expect(p.solves).toBeGreaterThan(points[i - 1].solves);
+    }
+    // Every solve up to 20 gets its own point.
+    expect(curvePoints({ ...long, decaySolves: 20 }).map((p) => p.solves)).toEqual(
+      Array.from({ length: 20 }, (_, i) => i + 1),
+    );
+    expect(curvePoints({ ...long, decaySolves: 999 }).at(-1)).toEqual({ solves: 999, value: 60 });
+  });
+
+  test("curve labels mark only the minimum with a plus", () => {
+    expect(curveLabel("race", 3, false)).toBe("3rd");
+    expect(curveLabel("race", 30, true)).toBe("30th+");
+    expect(curveLabel("rarity", 1, false)).toBe("1 team");
+    expect(curveLabel("rarity", 30, true)).toBe("30+ teams");
+  });
+
   test("contest ladders", () => {
     expect(describeLadder({ points: 200, minPoints: 60, contestPlaces: 3 })).toBe("1st: 200, 2nd: 101, 3rd: 60");
     const long = describeLadder({ points: 100, minPoints: 10, contestPlaces: 10 });
@@ -91,13 +138,53 @@ describe("scoring previews", () => {
       note: "Fixed",
     });
     expect(scoringSummary({ ...base, kind: "media", scoring: "race", points: 150, minPoints: 60 })).toEqual({
-      value: "150 → 60",
+      value: "150–60",
       note: "Race",
     });
     expect(scoringSummary({ ...base, kind: "contest", scoring: "fixed", points: 200, minPoints: 60 })).toEqual({
       value: "200 / 101 / 60",
       note: "Top 3, highest wins",
     });
+  });
+});
+
+describe("earningSubmissions", () => {
+  const at = (min: number) => new Date(Date.UTC(2026, 8, 27, 19, min));
+  const sub = (
+    id: string,
+    taskId: string,
+    min: number,
+    extra: Partial<Parameters<typeof earningSubmissions>[0][0]> = {},
+  ) => ({
+    id,
+    taskId,
+    taskKind: "media" as const,
+    status: "approved" as const,
+    createdAt: at(min),
+    contestValue: null,
+    ...extra,
+  });
+
+  test("a standard task's points belong to its first accepted submission", () => {
+    const earning = earningSubmissions(
+      [sub("late", "t1", 30), sub("rejected", "t1", 5, { status: "rejected" }), sub("first", "t1", 10)],
+      () => undefined,
+    );
+    expect(earning.get("t1")).toBe("first");
+  });
+
+  test("a contest's points belong to the entry that set the place", () => {
+    const contest = { taskKind: "contest" as const };
+    const subs = [
+      sub("ten", "c1", 5, { ...contest, contestValue: 10 }),
+      sub("forty", "c1", 20, { ...contest, contestValue: 40 }),
+    ];
+    const entry = { teamId: "team", place: 1, value: 40, at: at(20).getTime(), points: 100 };
+    expect(earningSubmissions(subs, () => entry).get("c1")).toBe("forty");
+    // Totals: the entry that completed the total.
+    expect(earningSubmissions(subs, () => ({ ...entry, value: 50 })).get("c1")).toBe("forty");
+    // No ranked entry (hidden team, no value recorded): no points shown.
+    expect(earningSubmissions(subs, () => undefined).has("c1")).toBe(false);
   });
 });
 
@@ -177,7 +264,7 @@ describe("setupSteps", () => {
     helperCount: 0,
     inviteCount: 0,
     playerCount: 0,
-    printedCheckpoints: false,
+    printedCheckpoints: 0,
   };
 
   test("a fresh draft has nothing done and no poster step", () => {
@@ -187,10 +274,18 @@ describe("setupSteps", () => {
   });
 
   test("checkpoint tasks add the poster step", () => {
-    const steps = setupSteps({ ...base, taskCount: 12, checkpointCount: 2, printedCheckpoints: true });
+    const steps = setupSteps({ ...base, taskCount: 12, checkpointCount: 2, printedCheckpoints: 2 });
     const posters = steps.find((s) => s.id === "posters");
     expect(posters?.done).toBe(true);
     expect(steps.find((s) => s.id === "tasks")?.done).toBe(true);
+  });
+
+  test("the poster step waits until every checkpoint is printed with its current code", () => {
+    const steps = setupSteps({ ...base, taskCount: 12, checkpointCount: 3, printedCheckpoints: 1 });
+    const posters = steps.find((s) => s.id === "posters");
+    expect(posters?.done).toBe(false);
+    expect(posters?.title).toBe("Print checkpoint posters");
+    expect(posters?.detail.startsWith("1 of 3 printed")).toBe(true);
   });
 
   test("publishing and the first player tick off the last steps", () => {

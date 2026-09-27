@@ -2,26 +2,53 @@
 /**
  * Service worker. Bundled by Bun into public/sw.js (`bun run sw:build`, which
  * `dev` and `build` run first) and registered by components/pwa/sw-register.tsx.
+ * What gets kept and why lives in lib/platform/sw-policy.ts.
  *
  * Caches
- *   shell   /offline plus its CSS, JS and fonts, and the app icons — precached at install
- *   static  /_next/static/* — cache-first; only immutable (production) responses are kept
- *   media   photo derivatives (/files/<id>/thumb|display|poster), images, fonts —
- *           cache-first, capped at MEDIA_LIMIT entries (oldest trimmed first)
- *   pages   navigations — network-first with a NAV_TIMEOUT_MS timeout, falling back to
- *           the last copy of the page, then (after NAV_GIVE_UP_MS) to /offline. A
- *           gateway error while the server restarts also shows the last copy.
+ *   shell    /offline plus its CSS, JS and fonts, and the notification icons — precached at install
+ *   static   /_next/static/* — cache-first; only immutable (production) responses are kept
+ *   media    images and fonts on players' pages (task attachments, the team's photos,
+ *            terrain, icons) — cache-first, capped at MEDIA_LIMIT (oldest trimmed first)
+ *   gallery  photos seen in the gallery or on the big screen — same, capped at GALLERY_LIMIT,
+ *            so browsing hundreds of photos can't push out the ones that matter offline.
+ *            Photos on staff pages aren't kept at all.
+ *   pages    navigations to player pages — network-first with a NAV_TIMEOUT_MS timeout,
+ *            falling back to the last copy of the page, then (after NAV_GIVE_UP_MS) to
+ *            /offline. A gateway error while the server restarts also shows the last copy.
+ *            A saved copy is marked on <html> (data-saved-copy) so the page can say so and
+ *            refresh itself; see components/pwa/offline-banner.tsx. Staff, account and
+ *            checkpoint pages aren't kept: those just wait for the network.
  * Never touched: other origins, non-GET (Server Action POSTs), /api/*, event
  * streams, RSC payloads (RSC: 1 or ?_rsc=), /files/<id>/original, range requests.
  *
  * Also
  *   sync                     flushes the offline submission queue (lib/offline/queue.ts)
  *   push                     shows the notification the server sent (lib/push.ts payloads)
- *   notificationclick        focuses an open window on the right page, or opens one
+ *   notificationclick        brings forward a window showing that page, or moves the best
+ *                            window there in-app (message OPEN), or opens one
  *   pushsubscriptionchange   re-subscribes and tells the server
  *   message SKIP_WAITING     activates a waiting update when the page asks (the "Reload" button)
+ *   message PURGE            forgets saved pages and photos (leaving a team, signing out;
+ *                            components/pwa/forget.ts)
  */
 import { flushQueue, QUEUE_SYNC_TAG } from "@/lib/offline/queue";
+import { forgetSavedCopies } from "@/lib/platform/saved-copies";
+import {
+  CACHE,
+  freshPageVerdict,
+  keepsSavedCopy,
+  mediaBucket,
+  OFFLINE_REASON_ATTR,
+  type OfflineReason,
+  pageTitle,
+  pickWindow,
+  SAVED_AT_HEADER,
+  SAVED_COPY_ATTR,
+  SAVED_REASON_ATTR,
+  SAVED_TITLE_HEADER,
+  type SavedReason,
+  withHtmlAttribute,
+} from "@/lib/platform/sw-policy";
 
 declare const self: ServiceWorkerGlobalScope;
 
@@ -37,23 +64,15 @@ declare global {
 }
 
 /** Bump when the shell or page cache format changes; old caches are deleted on activate. */
-const VERSION = "2026-09-28";
-const SHELL = `shp-shell-${VERSION}`;
-const PAGES = `shp-pages-${VERSION}`;
-/** Content-addressed, so these survive updates (trimmed by count instead). */
-const STATIC = "shp-static";
-const MEDIA = "shp-media";
-const CURRENT = new Set([SHELL, PAGES, STATIC, MEDIA]);
+const VERSION = "2026-09-28.2";
+const SHELL = `${CACHE.shellPrefix}${VERSION}`;
+const PAGES = `${CACHE.pagesPrefix}${VERSION}`;
+/** Content-addressed or keyed by file id, so these survive updates (trimmed by count instead). */
+const CURRENT = new Set<string>([SHELL, PAGES, CACHE.static, CACHE.media, CACHE.gallery]);
 
 const OFFLINE_URL = "/offline";
-const SHELL_ASSETS = [
-  "/icons/icon-192.png",
-  "/icons/icon-512.png",
-  "/icons/maskable-512.png",
-  "/icons/apple-touch-icon-180.png",
-  "/icons/badge-96.png",
-  "/brand/hedgehog-192.png",
-];
+/** Besides the offline page's own files: the notification icon and badge, and the offline page's mascot. */
+const SHELL_ASSETS = ["/icons/icon-192.png", "/icons/badge-96.png", "/brand/hedgehog-192.png"];
 
 /** A navigation slower than this shows the saved copy of the page, if there is one… */
 const NAV_TIMEOUT_MS = 4000;
@@ -62,8 +81,16 @@ const NAV_GIVE_UP_MS = 15_000;
 /** What a reverse proxy answers while the app restarts. */
 const GATEWAY_ERROR = new Set([502, 503, 504]);
 const MEDIA_LIMIT = 300;
+const GALLERY_LIMIT = 150;
 const PAGES_LIMIT = 60;
 const STATIC_LIMIT = 500;
+/** Trims wait this long, so a burst of puts (a page of thumbnails) is trimmed once. */
+const TRIM_DELAY_MS = 2000;
+/** How long a page gets to answer "OPEN" from a notification tap before the worker navigates it. */
+const OPEN_ANSWER_MS = 1500;
+
+/** When saved copies were last forgotten: responses to requests started before then aren't saved. */
+let purgedAt = 0;
 
 // Lifecycle ------------------------------------------------------------------------
 
@@ -84,23 +111,32 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("message", (event) => {
-  if ((event.data as { type?: string } | null)?.type === "SKIP_WAITING") void self.skipWaiting();
+  const data = event.data as { type?: string; huntSlug?: unknown } | null;
+  if (data?.type === "SKIP_WAITING") {
+    void self.skipWaiting();
+  } else if (data?.type === "PURGE") {
+    purgedAt = Date.now();
+    event.waitUntil(forgetSavedCopies(typeof data.huntSlug === "string" ? data.huntSlug : null).catch(noop));
+  }
 });
 
-/** The offline page and everything it needs to render, plus the icons. */
+/** The offline page and everything it needs to render, plus the notification icons. */
 async function precacheShell(): Promise<void> {
   const cache = await caches.open(SHELL);
+  // The offline page must be this version's, so it skips the HTTP cache…
   const page = await fetch(OFFLINE_URL, { cache: "reload", credentials: "omit" });
   if (!page.ok) throw new Error(`Couldn't precache ${OFFLINE_URL} (${page.status})`);
   const html = await page.clone().text();
   await cache.put(OFFLINE_URL, page);
 
+  // …while its chunks and fonts are content-hashed, and the icons revalidate: whatever the
+  // HTTP cache already holds from the page that registered this worker is right.
   const assets = new Set<string>(SHELL_ASSETS);
   for (const url of staticUrls(html)) assets.add(url);
   const fetched = await Promise.all(
     [...assets].map(async (url) => {
       try {
-        const res = await fetch(url, { cache: "reload" });
+        const res = await fetch(url);
         if (!res.ok) return null;
         await cache.put(url, res.clone());
         return url.endsWith(".css") ? await res.text() : null;
@@ -115,7 +151,7 @@ async function precacheShell(): Promise<void> {
   await Promise.all(
     [...fonts].map(async (url) => {
       try {
-        const res = await fetch(url, { cache: "reload" });
+        const res = await fetch(url);
         if (res.ok) await cache.put(url, res);
       } catch {
         // best effort
@@ -149,11 +185,6 @@ function staticUrls(text: string): string[] {
 const MEDIA_FILE = /^\/files\/[^/]+\/(thumb|display|poster)\/?$/;
 const ORIGINAL_FILE = /^\/files\/[^/]+\/original\/?$/;
 const MEDIA_EXTENSION = /\.(png|jpe?g|gif|webp|avif|svg|ico|woff2?)$/i;
-/**
- * Pages not kept for offline use: staff and account pages (little use offline, and
- * not wanted lying around on a shared phone after signing out) and the offline page.
- */
-const NO_PAGE_CACHE = /^\/(login|signup|setup|invite|admin|manage|dashboard|offline)(\/|$)/;
 
 function passThrough(request: Request, url: URL): boolean {
   const path = url.pathname;
@@ -184,67 +215,126 @@ self.addEventListener("fetch", (event) => {
     request.destination === "font" ||
     MEDIA_EXTENSION.test(url.pathname)
   ) {
-    event.respondWith(mediaAsset(event));
+    event.respondWith(mediaAsset(event, url));
   }
 });
 
 /**
  * Network first. A slow network with a saved copy shows the copy (the network still
  * refreshes it in the background); with no copy it keeps waiting until NAV_GIVE_UP_MS,
- * then shows the offline page, whose "Try again" reloads this address.
+ * then shows the offline page, whose "Try again" reloads this address. Pages that are
+ * never saved just wait for the network, and show the offline page only if it fails.
  */
 async function navigation(event: FetchEvent, url: URL): Promise<Response> {
+  const keep = keepsSavedCopy(url.pathname);
   const key = url.origin + url.pathname + url.search;
-  const keep = !NO_PAGE_CACHE.test(url.pathname);
-  const cache = await caches.open(PAGES);
+  const started = Date.now();
 
   const network = (async () => {
     const preloaded = (await event.preloadResponse) as Response | undefined;
     const response = preloaded ?? (await fetch(event.request));
-    if (keep && response.ok && response.type === "basic") {
-      const copy = response.clone();
-      event.waitUntil(cache.put(key, copy).then(() => trim(PAGES, PAGES_LIMIT)));
-    }
+    if (keep) event.waitUntil(rememberPage(key, response.clone(), started).catch(noop));
     return response;
   })();
-  // Whatever happens to the race below, let the request finish (and refresh the saved copy).
+
+  if (!keep) {
+    try {
+      return await network;
+    } catch {
+      return offlinePage("offline");
+    }
+  }
+
+  // Whatever happens to the race below, let the request finish (and update the saved copy).
   event.waitUntil(network.then(noop, noop));
-
-  // The saved copy of this page; for launch URLs like /?source=pwa, the same page under any query.
-  const savedCopy = async () =>
-    keep
-      ? ((await cache.match(key, { ignoreVary: true })) ??
-        (await cache.match(url.origin + url.pathname, { ignoreVary: true, ignoreSearch: true })))
-      : undefined;
-
+  const saved = (reason: SavedReason) => savedCopy(url, key, reason);
   try {
     const first = await Promise.race([network, delay(NAV_TIMEOUT_MS)]);
     // The proxy answers 502–504 while the app restarts: the last copy beats an error page.
-    if (first) return GATEWAY_ERROR.has(first.status) ? ((await savedCopy()) ?? first) : first;
-    const saved = await savedCopy();
-    if (saved) return saved;
+    if (first) return GATEWAY_ERROR.has(first.status) ? ((await saved("unavailable")) ?? first) : first;
+    const copy = await saved("slow");
+    if (copy) return copy;
     const late = await Promise.race([network, delay(NAV_GIVE_UP_MS - NAV_TIMEOUT_MS)]);
-    return late ?? (await offlinePage());
+    return late ?? (await offlinePage("slow"));
   } catch {
-    return (await savedCopy()) ?? (await offlinePage());
+    return (await saved("offline")) ?? (await offlinePage("offline"));
   }
 }
 
-async function offlinePage(): Promise<Response> {
-  return (await caches.match(OFFLINE_URL)) ?? offlineFallback();
+/**
+ * Brings the saved copy of a page in line with a fresh response: replaced by a normal
+ * page, deleted when the page is gone for this device (not found, redirected away),
+ * left alone after a server error. See freshPageVerdict.
+ */
+async function rememberPage(key: string, response: Response, started: number): Promise<void> {
+  const contentType = response.headers.get("content-type");
+  const readable = response.status === 200 && response.type === "basic" && /^text\/html\b/i.test(contentType ?? "");
+  const html = readable ? await response.text() : null;
+  const verdict = freshPageVerdict({ status: response.status, type: response.type, contentType }, html);
+  // A "forget this device" (leaving a team, signing out) happened while this was loading.
+  if (verdict === "skip" || started < purgedAt) return;
+  const cache = await caches.open(PAGES);
+  if (verdict === "forget" || html == null) {
+    await cache.delete(key);
+    return;
+  }
+  const title = pageTitle(html);
+  const copy = htmlResponse(html, response, {
+    [SAVED_AT_HEADER]: new Date().toISOString(),
+    ...(title ? { [SAVED_TITLE_HEADER]: encodeURIComponent(title) } : {}),
+  });
+  await cache.put(key, copy);
+  if (started < purgedAt) await cache.delete(key);
+  await trimSoon(PAGES, PAGES_LIMIT);
+}
+
+/** The saved copy of a page, marked for the page to notice; for launch URLs like /?source=pwa, the page without the query. */
+async function savedCopy(url: URL, key: string, reason: SavedReason): Promise<Response | undefined> {
+  const cache = await caches.open(PAGES);
+  const hit =
+    (await cache.match(key, { ignoreVary: true })) ??
+    (url.search ? await cache.match(url.origin + url.pathname, { ignoreVary: true }) : undefined);
+  if (!hit) return undefined;
+  let html = await hit.text();
+  html = withHtmlAttribute(html, SAVED_REASON_ATTR, reason);
+  html = withHtmlAttribute(html, SAVED_COPY_ATTR, hit.headers.get(SAVED_AT_HEADER) ?? "");
+  return htmlResponse(html, hit);
+}
+
+/** The precached offline page, marked with why it's showing (no connection, or a very slow one). */
+async function offlinePage(reason: OfflineReason): Promise<Response> {
+  const page = await caches.match(OFFLINE_URL);
+  if (!page) return offlineFallback();
+  return htmlResponse(withHtmlAttribute(await page.text(), OFFLINE_REASON_ATTR, reason), page);
+}
+
+/**
+ * Page HTML as a new response with the original's status and headers, less the ones that
+ * described its old body: the text here is already decoded, whatever the server compressed.
+ */
+function htmlResponse(html: string, from: Response, extra: Record<string, string> = {}): Response {
+  const headers = new Headers(from.headers);
+  for (const name of ["content-encoding", "content-length", "transfer-encoding"]) headers.delete(name);
+  for (const [name, value] of Object.entries(extra)) headers.set(name, value);
+  return new Response(html, { status: from.status, statusText: from.statusText, headers });
 }
 
 /** Hashed build assets: cache-first. Dev-server chunks aren't immutable, so they're never stored. */
 async function staticAsset(event: FetchEvent): Promise<Response> {
   const { request } = event;
-  const cache = await caches.open(STATIC);
+  const cache = await caches.open(CACHE.static);
   const hit = await cache.match(request);
   if (hit) return hit;
   try {
     const response = await fetch(request);
     if (response.ok && response.type === "basic" && /immutable/.test(response.headers.get("cache-control") ?? "")) {
       const copy = response.clone();
-      event.waitUntil(cache.put(request, copy).then(() => trim(STATIC, STATIC_LIMIT)));
+      event.waitUntil(
+        cache
+          .put(request, copy)
+          .then(() => trimSoon(CACHE.static, STATIC_LIMIT))
+          .catch(noop),
+      );
     }
     return response;
   } catch {
@@ -253,22 +343,53 @@ async function staticAsset(event: FetchEvent): Promise<Response> {
   }
 }
 
-/** Photos, images and fonts: cache-first with a size cap. */
-async function mediaAsset(event: FetchEvent): Promise<Response> {
+/** Photos, images and fonts: cache-first, kept in the cache the requesting page calls for. */
+async function mediaAsset(event: FetchEvent, url: URL): Promise<Response> {
   const { request } = event;
-  const cache = await caches.open(MEDIA);
-  const hit = await cache.match(request);
+  const hit = await caches.match(request);
   if (hit) return hit;
+  const started = Date.now();
   try {
     const response = await fetch(request);
     if (response.status === 200 && response.type === "basic") {
-      const copy = response.clone();
-      event.waitUntil(cache.put(request, copy).then(() => trim(MEDIA, MEDIA_LIMIT)));
+      event.waitUntil(keepMedia(event.clientId, url, request, response.clone(), started).catch(noop));
     }
     return response;
   } catch {
-    return (await caches.match(request)) ?? Response.error();
+    return Response.error();
   }
+}
+
+async function keepMedia(
+  clientId: string,
+  url: URL,
+  request: Request,
+  response: Response,
+  started: number,
+): Promise<void> {
+  const client = clientId ? await self.clients.get(clientId) : undefined;
+  const bucket = mediaBucket(url.pathname, client ? new URL(client.url).pathname : null);
+  if (!bucket || started < purgedAt) return;
+  const name = bucket === "gallery" ? CACHE.gallery : CACHE.media;
+  const cache = await caches.open(name);
+  await cache.put(request, response);
+  if (started < purgedAt) await cache.delete(request);
+  await trimSoon(name, bucket === "gallery" ? GALLERY_LIMIT : MEDIA_LIMIT);
+}
+
+const pendingTrims = new Map<string, Promise<void>>();
+
+/** Trims a cache shortly, once for a whole burst of puts rather than once per put. */
+function trimSoon(name: string, max: number): Promise<void> {
+  let pending = pendingTrims.get(name);
+  if (!pending) {
+    pending = delay(TRIM_DELAY_MS).then(() => {
+      pendingTrims.delete(name);
+      return trim(name, max);
+    });
+    pendingTrims.set(name, pending);
+  }
+  return pending;
 }
 
 /** Keeps a cache at `max` entries by deleting the oldest (entries are listed in insertion order). */
@@ -335,27 +456,67 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const raw = (event.notification.data as { url?: string } | null)?.url ?? "/";
-  let target = new URL(raw, self.location.origin);
+  let target: URL;
+  try {
+    target = new URL(raw, self.location.origin);
+  } catch {
+    target = new URL("/", self.location.origin);
+  }
   if (target.origin !== self.location.origin) target = new URL("/", self.location.origin);
-  event.waitUntil(focusOrOpen(target.href));
+  event.waitUntil(openFromNotification(target));
 });
 
-async function focusOrOpen(href: string): Promise<unknown> {
-  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-  const exact = windows.find((w) => w.url === href);
-  if (exact) return exact.focus();
-  // Prefer a window this worker controls: only those can be navigated.
-  const candidate = windows.find((w) => w.visibilityState === "visible") ?? windows[0];
-  if (candidate) {
-    try {
-      const focused = await candidate.focus();
-      const navigated = await focused.navigate(href);
+/**
+ * A window already on that page comes forward as it is. Otherwise the best window
+ * (same hunt first; see pickWindow) is asked to move there in-app, which keeps an
+ * upload in progress or feedback being typed elsewhere in the app; a page that
+ * doesn't answer is navigated (controlled windows only), else a window opens.
+ */
+async function openFromNotification(target: URL): Promise<unknown> {
+  const [windows, controlled] = await Promise.all([
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }),
+    self.clients.matchAll({ type: "window" }),
+  ]);
+  const controlledIds = new Set(controlled.map((c) => c.id));
+  const choice = pickWindow(
+    windows.map((w) => ({
+      id: w.id,
+      url: w.url,
+      visible: w.visibilityState === "visible",
+      focused: w.focused,
+      controlled: controlledIds.has(w.id),
+    })),
+    target,
+  );
+  const client = choice ? windows.find((w) => w.id === choice.id) : undefined;
+  if (choice && client) {
+    const focused = (await client.focus().catch(() => null)) ?? client;
+    if (!choice.open) return focused;
+    if (await askToOpen(focused, target)) return focused;
+    if (controlledIds.has(client.id)) {
+      const navigated = await focused.navigate(target.href).catch(() => null);
       if (navigated) return navigated;
-    } catch {
-      // Not controlled by this worker, or navigate() unsupported: open a window instead.
     }
   }
-  return self.clients.openWindow(href);
+  return self.clients.openWindow(target.href);
+}
+
+/** Asks a page to go to `target` itself (components/pwa/sw-register.tsx); false if it doesn't answer. */
+function askToOpen(client: WindowClient, target: URL): Promise<boolean> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(false), OPEN_ANSWER_MS);
+    channel.port1.onmessage = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    try {
+      client.postMessage({ type: "OPEN", url: target.pathname + target.search + target.hash }, [channel.port2]);
+    } catch {
+      clearTimeout(timer);
+      resolve(false);
+    }
+  });
 }
 
 self.addEventListener("pushsubscriptionchange", (event) => {

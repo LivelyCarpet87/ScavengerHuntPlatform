@@ -275,16 +275,16 @@ function InviteRow({ huntId, invite, serverNow }: { huntId: string; invite: Acti
         fields={{ huntId, inviteId: invite.id }}
         label={
           <>
-            Revoke<span className="sr-only"> {ROLE_LABEL[invite.role].toLowerCase()} invite</span>
+            Turn off link<span className="sr-only"> for {ROLE_LABEL[invite.role].toLowerCase()}s</span>
           </>
         }
         icon={<Trash aria-hidden />}
         variant="ghost"
         size="sm"
         className="text-danger"
-        title="Revoke this invite link?"
-        description="The link stops working immediately. People who already joined keep their access."
-        confirmLabel="Revoke link"
+        title="Turn off this invite link?"
+        description="The link stops working right away. People who already used it keep their access."
+        confirmLabel="Turn off link"
       />
     </li>
   );

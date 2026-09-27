@@ -1,35 +1,27 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef } from "react";
+import { requestRefresh } from "./refresh";
 import { useHuntEvents } from "./use-hunt-events";
-
-const QUIET_MS = 800;
-/** During a steady stream of submissions, refresh at least this often. */
-const MAX_WAIT_MS = 3000;
 
 /**
  * Mounted once by StaffShell: keeps the pending-review badge and the current
- * page fresh as submissions arrive or get judged by other staff.
+ * page fresh as submissions arrive or get judged by other staff. During a
+ * steady stream of submissions the page refreshes at least every 3 s; the
+ * refresh is shared with the page's own LiveRefresh (see ./refresh.ts).
+ * Unlike players' phones, staff tabs stay live in the background: judges
+ * watch the queue's count in the tab title.
  */
 export function StaffLive({ huntId }: { huntId: string }) {
   const router = useRouter();
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const firstPending = useRef<number | null>(null);
-
-  useHuntEvents(huntId, (e) => {
-    if (e.type !== "submission.created" && e.type !== "submission.judged") return;
-    const now = Date.now();
-    firstPending.current ??= now;
-    const waited = now - firstPending.current;
-    clearTimeout(timer.current);
-    timer.current = setTimeout(
-      () => {
-        firstPending.current = null;
-        router.refresh();
-      },
-      Math.max(0, Math.min(QUIET_MS, MAX_WAIT_MS - waited)),
-    );
-  });
+  useHuntEvents(
+    huntId,
+    (e) => {
+      if (e.type === "submission.created" || e.type === "submission.judged") {
+        requestRefresh(router, "soon", { hidden: true });
+      }
+    },
+    { background: true, onResync: () => requestRefresh(router, "soon", { hidden: true }) },
+  );
   return null;
 }

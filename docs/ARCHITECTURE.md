@@ -59,10 +59,11 @@ lib/
   player/progress.ts            getTeamProgress, getRevealedHints, getTaskSubmissions
   realtime/bus.ts               publish(huntId, event) / subscribe — every mutation publishes
   push.ts                       notifyTeam, notifyHuntPlayers, notifyHuntStaff, saveSubscription …
-  storage.ts                    storeUpload, storePoster, fileUrl, filesFor, deleteFiles, deleteHuntStorage
+  storage.ts                    storeUpload, storePoster, fileUrl, filesFor, deleteFiles, deleteHuntStorage, isClean
+  strip-metadata.ts             stripMetadata: EXIF/GPS, XMP and container tags out of photos and videos, losslessly
   files-access.ts               canViewFile
   actions.ts                    ActionState, ok, fail, parseForm, zCheckbox, zInt, zOptionalInt, zOptionalText, zOptionalDate
-  rate-limit.ts                 rateLimit, clientIp
+  rate-limit.ts                 rateLimit, peekRateLimit, clientIp (X-Forwarded-For from the right, TRUSTED_PROXY_HOPS)
   audit.ts                      audit({ huntId, actorUserId, action, … })
   ids.ts                        newId, newToken, newJoinCode, newCode, normalizeCode, formatCode, slugify
   format.ts                     formatPoints, formatSigned, ordinal, formatClock, formatRelative, formatDateTime …
@@ -114,17 +115,26 @@ export async function renameTeam(_prev: ActionState, formData: FormData): Promis
 * Validation errors are user-facing sentences ("Team names can be up to 32
   characters."), returned via `fail()` / `parseForm`.
 * Forms use `useActionState` + `<SubmitButton>` + `<FormMessage>` + `fieldError()`
-  from `components/ui/form.tsx`.
+  from `components/ui/form.tsx`. Dates use `<DateTimeField>`, which submits an
+  ISO instant (`zOptionalDate`); on staff pages it shows and reads the hunt's
+  time zone (StaffShell provides it), elsewhere the browser's.
 
 ## Contracts between areas
 
 **Submission upload API** — `POST /api/hunts/[huntId]/submissions`
 (`multipart/form-data`): `taskId`, `clientId` (device-generated idempotency
 key), `text?`, `files` (0–4 files), `poster?` (video poster frame, image),
-`lat?`, `lng?`, `accuracy?`. The signed-in player's team is implied by the
-session cookie. Responses:
+`lat?`, `lng?`, `accuracy?`, `teamId?` (the team the proof was made for;
+refused once the phone is on another team), `queuedFor?` (ms it waited in the
+phone's upload queue). The signed-in player's team is implied by the
+session cookie. A submission's time is when the request arrived; proof that
+waited on a phone counts after a task closes or the hunt ends if it was made
+while open and arrives within `LATE_GRACE_MS` (10 min, `lib/player/submit.ts`).
+Responses:
 * `200 { ok: true, duplicate?: boolean, submission: { id, status, feedback, points } }`
-* `4xx { ok: false, error: string, retryable: false }` — do not retry (invalid, closed, limit reached)
+* `4xx { ok: false, error: string, code?, retryable: false }` — do not retry (invalid, closed, limit reached).
+  `code: "already_completed"`: the team already has the task, so the upload can be dropped;
+  `code: "team_changed"`: the phone moved team, so it can't be sent
 * `429/5xx` or network error — retry later
 The offline queue (`lib/offline/queue.ts`) and the task page both use it;
 the service worker flushes the same queue on Background Sync
@@ -136,7 +146,15 @@ you have them). Browsers receive them via `/api/hunts/[huntId]/events`
 (filtered per viewer by `lib/realtime/filter.ts`). In pages, use
 `<LiveRefresh huntId on={[…]} />` to re-render on events, or
 `useHuntEvents(huntId, handler)` for custom behaviour. PlayerShell already
-mounts `PlayerLive` (result toasts); StaffShell mounts `StaffLive`.
+mounts `PlayerLive` (result toasts); StaffShell mounts `StaffLive`. A tab
+shares one connection per hunt; after a drop it resumes and the server replays
+what the viewer missed (`onResync` when it can't). Players get other teams'
+score and team changes as `mine: false` (none during the scoreboard freeze),
+which `LiveRefresh` takes at a slower pace; refreshes are merged per tab.
+Access is checked when a stream opens and again every 30 s (at once when the
+viewer's team or the hunt changes); a stream whose viewer left their team,
+lost their staff role or signed out is closed, and the browser reconnects to
+what it may see now.
 
 **Push** — `notifyTeam(teamId, payload)`, `notifyHuntPlayers(huntId, payload)`,
 `notifyHuntStaff(huntId, payload)` in `lib/push.ts`. Payload:
@@ -147,7 +165,12 @@ with `scoreboardCutoff(hunt, viewer)`. Never re-implement scoring in a page.
 
 **Files** — upload with `storeUpload({ file, huntId, ownerKind, ownerId, allow })`;
 render with `fileUrl(file, "thumb" | "display" | "original" | "poster")`.
-`/files/…` enforces `canViewFile`.
+`/files/…` enforces `canViewFile(file, variant)`. Photos and videos lose their
+EXIF/GPS, XMP and container tags before they're written (the original stays
+otherwise byte-for-byte; a PNG or WebP that needs rotating is re-encoded), and
+the row's `variants` gets `"clean"`. Other teams and the public (gallery) get a
+submission's original only when it's clean; staff and the submitting team get
+everything. Files stored before this are cleaned at boot (`cleanStoredUploads`).
 
 ## Development
 

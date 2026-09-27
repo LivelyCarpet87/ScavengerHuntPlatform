@@ -60,9 +60,16 @@ export function QueueFlusher({ huntId, slug }: { huntId: string; slug: string })
             });
           }
           router.refresh();
+        } else if (event.type === "already" && event.huntId === huntId) {
+          // A teammate finished the task while this waited for signal: nothing was lost.
+          toast({
+            title: "Nothing more to send",
+            description: `${event.label ?? "Your upload"}: your team already completed this task.`,
+          });
+          router.refresh();
         } else if (event.type === "failed" && event.huntId === huntId) {
           toast({
-            title: "Couldn't send an upload",
+            title: "Couldn’t send an upload",
             description: `${event.label ?? "Your upload"}: ${event.error}`,
             tone: "danger",
             durationMs: 8000,
@@ -99,7 +106,7 @@ export function QueueFlusher({ huntId, slug }: { huntId: string; slug: string })
           <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-danger" />
           <div className="min-w-0 flex-1">
             <p className="font-semibold">
-              Couldn't send{" "}
+              Couldn’t send{" "}
               <Link href={`/h/${slug}/tasks/${item.taskId}`} className="underline underline-offset-2">
                 {item.label ?? "an upload"}
               </Link>

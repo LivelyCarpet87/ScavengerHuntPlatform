@@ -1,13 +1,10 @@
-import { z } from "zod";
-import { normalizeCode } from "@/lib/ids";
-import { TEAM_COLOR_KEYS, TEAM_EMOJI, type TeamColor } from "@/lib/palette";
-
 /*
  * Joining a hunt: parsing what people type, paste or scan, the registration
- * rules, and the form schemas shared by the join, invite and team pages.
+ * rules, and the name limits shared by the join, invite and team pages.
  *
- * Client-safe: no database or server imports, so the code entry on the
- * landing page can use the same parser the server does.
+ * Client-safe and dependency-free: the code entry on the landing page and the
+ * join and team forms import it, so it must not import zod (or anything with
+ * a server or bundle cost). The zod form schemas live in ./join-schemas.ts.
  */
 
 // ---------------------------------------------------------------------------
@@ -148,7 +145,7 @@ export function joinPolicy(
 }
 
 // ---------------------------------------------------------------------------
-// Names and form schemas
+// Names
 // ---------------------------------------------------------------------------
 
 /** Trims, strips control characters and collapses runs of spaces. */
@@ -177,38 +174,6 @@ export function teamNameCandidates(name: string): string[] {
     return `${base.slice(0, TEAM_NAME_MAX - suffix.length).trimEnd()}${suffix}`;
   });
 }
-
-const zName = (min: number, max: number, tooShort: string, tooLong: string) =>
-  z.preprocess((v) => (typeof v === "string" ? cleanName(v) : ""), z.string().min(min, tooShort).max(max, tooLong));
-
-export const zTeamName = zName(
-  TEAM_NAME_MIN,
-  TEAM_NAME_MAX,
-  "Give your team a name of at least 2 characters.",
-  "Team names can be up to 32 characters.",
-);
-
-export const zPlayerName = zName(
-  1,
-  PLAYER_NAME_MAX,
-  "Add your name so teammates know who’s who.",
-  "Names can be up to 24 characters.",
-);
-
-export const zTeamEmoji = z
-  .string({ message: "Pick an emoji for your team." })
-  .refine((v) => TEAM_EMOJI.includes(v), "Pick an emoji from the list.");
-
-export const zTeamColor = z.custom<TeamColor>(
-  (v) => typeof v === "string" && (TEAM_COLOR_KEYS as string[]).includes(v),
-  "Pick a color from the list.",
-);
-
-/** Team codes: 6 characters; accepts "K7Q M4P", "k7q-m4p" and the like. */
-export const zTeamCode = z.preprocess(
-  (v) => (typeof v === "string" ? normalizeCode(v) : ""),
-  z.string().min(1, "Enter your team’s code.").length(6, "Team codes have 6 characters, like K7Q M4P."),
-);
 
 // ---------------------------------------------------------------------------
 // Schedule

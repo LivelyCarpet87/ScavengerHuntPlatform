@@ -30,11 +30,13 @@ export function HuntHero({
   className?: string;
 }) {
   // With a cover photo the legend overlaps its lower edge, like a legend box
-  // pasted onto the map, so the page doesn't open on a wall of header.
+  // pasted onto the map, so the page doesn't open on a wall of header. On
+  // phones the map runs edge to edge, right under the header when nothing
+  // (a notice, the staff line) comes before it.
   return (
     <section
       className={cn(
-        "-mx-4 -mt-5 overflow-hidden border-b border-line sm:mx-0 sm:mt-0 sm:rounded-xl sm:border",
+        "-mx-4 overflow-hidden border-b border-line max-sm:first:-mt-5 max-sm:not-first:border-t sm:mx-0 sm:rounded-xl sm:border",
         className,
       )}
     >

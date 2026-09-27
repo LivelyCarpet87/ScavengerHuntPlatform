@@ -55,7 +55,10 @@ export function AddTeamsDialog({
   return (
     <>
       {!showTrigger ? null : placement === "responsive" ? (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:static md:z-auto md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+        <div
+          data-bottom-bar
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:static md:z-auto md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none"
+        >
           <Button onClick={() => setOpen(true)} className="h-14 w-full text-base md:h-11 md:w-auto md:text-[0.9375rem]">
             <Plus aria-hidden />
             Add teams
@@ -100,9 +103,12 @@ export function AddTeamsDialog({
                 Done
               </Button>
               {result.created.length > 0 ? (
+                // No close() here: its router.replace (run again by the dialog's native close event)
+                // would cancel this navigation while the page still has ?add=1. The dialog goes away
+                // with the Teams page; `replace` drops the ?add=1 entry, so Back doesn't reopen it.
                 <ButtonLink
                   href={`/manage/${huntId}/print/teams?ids=${result.created.map((t) => t.id).join(",")}`}
-                  onClick={close}
+                  replace={wantsOpen}
                 >
                   <Printer aria-hidden />
                   Print their team cards
@@ -121,6 +127,7 @@ export function AddTeamsDialog({
                   rows={8}
                   placeholder={"Night Owls\nLake Otters\nRust Buckets"}
                   autoFocus
+                  data-autofocus
                   spellCheck={false}
                 />
               )}

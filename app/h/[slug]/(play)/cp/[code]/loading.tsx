@@ -6,9 +6,9 @@ export default function CheckpointLoading() {
       aria-busy="true"
     >
       <output className="sr-only">Checking the checkpoint</output>
-      <div className="size-28 animate-pulse rounded-full border-[5px] border-dashed border-accent/50" />
-      <div className="h-8 w-48 animate-pulse rounded-md bg-mist" />
-      <div className="h-5 w-32 animate-pulse rounded-md bg-mist" />
+      <div className="size-28 rounded-full border-[5px] border-dashed border-accent/50" />
+      <div className="h-8 w-48 rounded-md bg-mist" />
+      <div className="h-5 w-32 rounded-md bg-mist" />
     </div>
   );
 }

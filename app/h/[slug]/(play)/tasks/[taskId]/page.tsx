@@ -23,14 +23,14 @@ import { ActionBarSpacer } from "@/components/task/action-bar";
 import { ContestRanking } from "@/components/task/contest-ranking";
 import { HintList, type HintView } from "@/components/task/hint-list";
 import { MediaStrip } from "@/components/task/media-strip";
+import { StopScreen, StopScreenFrame } from "@/components/task/stop-screen";
 import { SubmissionCard, toMediaItems } from "@/components/task/submission-card";
 import { TaskActionArea } from "@/components/task/task-action-area";
 import type { ActionTask, TeamTaskState } from "@/components/task/task-types";
 import { Numeral } from "@/components/ui/bib";
 import { ButtonLink } from "@/components/ui/button";
-import { ControlMarker, type ControlState } from "@/components/ui/control";
+import { ControlMarker, type ControlState, StartMark } from "@/components/ui/control";
 import { Countdown } from "@/components/ui/countdown";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Markdown } from "@/components/ui/markdown";
 import { Notice } from "@/components/ui/misc";
 import { PunchMark } from "@/components/ui/punch";
@@ -42,6 +42,7 @@ import { env } from "@/lib/env";
 import { formatBytes, formatDateTime, formatPoints, formatTime, ordinal, plural } from "@/lib/format";
 import { canViewScoreboard, huntPhase, isTaskVisible, scoreboardCutoff, submissionBlockReason } from "@/lib/hunts";
 import { getRevealedHints, getTaskSubmissions } from "@/lib/player/progress";
+import { LATE_GRACE_MS } from "@/lib/player/submit";
 import { getStandings } from "@/lib/scoring/service";
 import { filesFor, fileUrl } from "@/lib/storage";
 import { acceptAttr, describeScoring, judgingNote, kindLabel, taskAvailability } from "@/lib/tasks";
@@ -69,10 +70,13 @@ async function loadTask(slug: string, taskId: string) {
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { slug, taskId } = await params;
   const { hunt, me, staffRole, task } = await loadTask(slug, taskId);
-  if (!task) return {};
-  const started = huntPhase(hunt) !== "upcoming" && huntPhase(hunt) !== "draft";
-  if (staffRole || (me && started && isTaskVisible(task))) return { title: `${task.title} (${task.code})` };
-  return {};
+  // Visitors are sent to join first.
+  if (!me && !staffRole) return {};
+  // The same order of checks as the page, so the title says why the page says no.
+  if (!task || (!staffRole && !isTaskVisible(task))) return { title: "Task not open" };
+  const phase = huntPhase(hunt);
+  if (!staffRole && (phase === "upcoming" || phase === "draft")) return { title: "Not started yet" };
+  return { title: `${task.title} (${task.code})` };
 }
 
 const KIND_ICONS = {
@@ -123,10 +127,10 @@ function staffPreviewText(task: Pick<Task, "kind" | "mediaAccept" | "answers">):
   switch (task.kind) {
     case "answer":
       return task.answers.length > 0
-        ? "Teams type an answer here and learn straight away whether it's right."
+        ? "Teams type an answer here and learn straight away whether it’s right."
         : "Teams type an answer here; it waits in the judging queue.";
     case "checkpoint":
-      return "Teams scan the poster's QR code here, or type the code printed under it. It counts instantly.";
+      return "Teams scan the poster’s QR code here, or type the code printed under it. It counts instantly.";
     case "contest":
       return "Teams send entries here (media, a note, or both) and can keep sending more. Judges record a value for each accepted entry.";
     case "media":
@@ -237,23 +241,28 @@ function RejectedNotice({
 function NotStartedYet({ hunt }: { hunt: Pick<Hunt, "slug" | "startsAt" | "timezone"> }) {
   const now = Date.now();
   return (
-    <EmptyState
-      title="The hunt hasn't started yet"
-      action={
-        <ButtonLink href={links.hunt(hunt.slug)} variant="secondary" size="lg">
-          Back to the hunt
-        </ButtonLink>
-      }
-    >
-      {hunt.startsAt ? (
-        <>
-          Tasks open when it starts, at {formatDateTime(hunt.startsAt, hunt.timezone)}. That's in{" "}
-          <Countdown to={hunt.startsAt.getTime()} serverNow={now} className="text-lg text-ink" />.
-        </>
-      ) : (
-        "Tasks open when the organizers start it."
-      )}
-    </EmptyState>
+    <StopScreenFrame>
+      <StopScreen
+        mark={<StartMark size={64} />}
+        title="The hunt hasn’t started yet"
+        actions={
+          <ButtonLink href={links.hunt(hunt.slug)} size="lg">
+            Back to the hunt
+          </ButtonLink>
+        }
+      >
+        <p>
+          {hunt.startsAt ? (
+            <>
+              Tasks open when it starts, at {formatDateTime(hunt.startsAt, hunt.timezone)}. That’s in{" "}
+              <Countdown to={hunt.startsAt.getTime()} serverNow={now} className="text-xl text-ink" />.
+            </>
+          ) : (
+            "Tasks open when the organizers start it."
+          )}
+        </p>
+      </StopScreen>
+    </StopScreenFrame>
   );
 }
 
@@ -315,6 +324,20 @@ export default async function TaskPage({ params }: { params: Params }) {
   const availability = taskAvailability(task, hunt, nowDate);
   const blockReason = submissionBlockReason(hunt, task, nowDate);
   const open = !blockReason;
+  // Whichever comes first closes submissions; uploads saved on a phone before then still count a little later.
+  const closesAt = [task.lockAt, hunt.endsAt]
+    .filter((d): d is Date => d != null)
+    .reduce<Date | null>((a, d) => (!a || d < a ? d : a), null);
+  const closes = closesAt
+    ? {
+        at: closesAt.getTime(),
+        sentence:
+          closesAt === task.lockAt
+            ? `This task closes at ${formatTime(closesAt, tz)}`
+            : `The hunt ends at ${formatTime(closesAt, tz)}`,
+        lateUntil: formatTime(new Date(closesAt.getTime() + LATE_GRACE_MS), tz),
+      }
+    : null;
   const markerState: ControlState =
     state === "approved" || state === "pending" ? state : open && !outOfAttempts ? state : "locked";
 
@@ -375,8 +398,8 @@ export default async function TaskPage({ params }: { params: Params }) {
   const revealedCount = hintViews.filter((h) => h.body).length;
 
   const Icon = kindIcon(task);
-  const showsActionBar =
-    !!me && open && !outOfAttempts && (contest || state === "todo" || state === "rejected") && task.kind !== "answer";
+  // Every kind pins its main control (camera, answer field, scan button) above the tab bar on phones.
+  const showsActionBar = !!me && open && !outOfAttempts && (contest || state === "todo" || state === "rejected");
 
   return (
     <div className="flex flex-col gap-8">
@@ -404,7 +427,7 @@ export default async function TaskPage({ params }: { params: Params }) {
 
         {isStaff && task.hidden ? (
           <Notice tone="warning" icon={<EyeOff className="size-4" />} title="Hidden from players">
-            Only staff can open this task. Players who follow a link to it are told it isn't open.
+            Only staff can open this task. Players who follow a link to it are told it isn’t open.
           </Notice>
         ) : null}
 
@@ -453,7 +476,7 @@ export default async function TaskPage({ params }: { params: Params }) {
               ) : (
                 <p className="text-lg font-semibold">
                   Punched
-                  <span className="block text-base font-medium text-ink-2">This one doesn't score points.</span>
+                  <span className="block text-base font-medium text-ink-2">This one doesn’t score points.</span>
                 </p>
               )}
             </div>
@@ -462,7 +485,7 @@ export default async function TaskPage({ params }: { params: Params }) {
               {task.scoring === "fixed" ? "Just for fun" : "No points left"}
               <span className="block text-base font-medium text-ink-2">
                 {task.scoring === "fixed"
-                  ? "This task doesn't score points."
+                  ? "This task doesn’t score points."
                   : "Enough teams have solved it that it no longer scores."}
               </span>
             </p>
@@ -504,6 +527,37 @@ export default async function TaskPage({ params }: { params: Params }) {
         <Attachments files={taskFiles[task.id] ?? []} title={task.title} />
       </div>
 
+      {me ? (
+        <Section title={sectionTitle(task)}>
+          <TaskActionArea
+            huntId={hunt.id}
+            slug={slug}
+            teamId={me.team.id}
+            task={actionTask}
+            state={state}
+            closedReason={blockReason}
+            huntOver={phase === "ended" || phase === "archived"}
+            closes={closes}
+            closedNote={
+              phase === "ended" || phase === "archived" ? (
+                <Link href={links.scoreboard(slug)} className="font-semibold text-ink underline underline-offset-2">
+                  See the final scoreboard
+                </Link>
+              ) : availability.state === "closed" && availability.since ? (
+                `It closed at ${formatTime(availability.since, tz)}. The other tasks are still open.`
+              ) : null
+            }
+            wrongAttempts={wrongAttempts}
+            punchedAt={solve ? formatTime(solve.createdAt, tz) : null}
+            accept={acceptAttr(task)}
+            maxUploadBytes={env.maxUploadBytes}
+            latest={newest?.status === "pending" ? latestCard : null}
+            pendingEntries={contest ? subs.filter((s) => s.status === "pending").length : 0}
+          />
+        </Section>
+      ) : null}
+
+      {/* After the task's own control: hints are for when a team is stuck. */}
       {shownHints.length > 0 ? (
         <Section
           title="Hints"
@@ -529,7 +583,7 @@ export default async function TaskPage({ params }: { params: Params }) {
               </span>
               {task.answers.map((a) => `“${a}”`).join(", ")}
               {task.answerMatch === "loose"
-                ? " (case, accents, spacing and a leading “the” or “a” don't matter)"
+                ? " (case, accents, spacing and a leading “the” or “a” don’t matter)"
                 : task.answerMatch === "exact"
                   ? " (must match exactly, including capitals)"
                   : null}
@@ -549,34 +603,6 @@ export default async function TaskPage({ params }: { params: Params }) {
         </Section>
       ) : null}
 
-      {me ? (
-        <Section title={sectionTitle(task)}>
-          <TaskActionArea
-            huntId={hunt.id}
-            slug={slug}
-            task={actionTask}
-            state={state}
-            closedReason={blockReason}
-            huntOver={phase === "ended" || phase === "archived"}
-            closedNote={
-              phase === "ended" || phase === "archived" ? (
-                <Link href={links.scoreboard(slug)} className="font-semibold text-ink underline underline-offset-2">
-                  See the final scoreboard
-                </Link>
-              ) : availability.state === "closed" && availability.since ? (
-                `It closed at ${formatTime(availability.since, tz)}. The other tasks are still open.`
-              ) : null
-            }
-            wrongAttempts={wrongAttempts}
-            punchedAt={solve ? formatTime(solve.createdAt, tz) : null}
-            accept={acceptAttr(task)}
-            maxUploadBytes={env.maxUploadBytes}
-            latest={newest?.status === "pending" ? latestCard : null}
-            pendingEntries={contest ? subs.filter((s) => s.status === "pending").length : 0}
-          />
-        </Section>
-      ) : null}
-
       {contest ? (
         <Section title="Ranking">
           {boardVisible ? (
@@ -589,7 +615,7 @@ export default async function TaskPage({ params }: { params: Params }) {
 
       {me && history.length > 0 ? (
         <Section
-          title={contest ? "Your entries" : showLatest ? "Earlier submissions" : "Your team's submissions"}
+          title={contest ? "Your entries" : showLatest ? "Earlier submissions" : "Your team’s submissions"}
           aside={
             <span className="text-sm text-ink-2">
               {plural(history.length, contest ? "entry" : "submission", contest ? "entries" : "submissions")}

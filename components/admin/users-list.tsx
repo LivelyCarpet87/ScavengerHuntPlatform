@@ -100,7 +100,11 @@ export function UsersList({ users, meId }: { users: AdminUserRow[]; meId: string
                 </div>
               </div>
               <div className="hidden md:block">
-                {u.isAdmin ? <AdminBadge /> : <span className="text-sm text-ink-2">Hunt staff</span>}
+                {u.isAdmin ? (
+                  <AdminBadge />
+                ) : (
+                  <span className="text-sm text-ink-2">{u.canCreateHunts ? "Organizer" : "Hunt staff"}</span>
+                )}
               </div>
               <span className="hidden text-right font-bib text-xl md:block">{u.huntsStaffed}</span>
               <time dateTime={u.createdAt.toISOString()} className="hidden text-sm text-ink-2 md:block">

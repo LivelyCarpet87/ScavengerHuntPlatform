@@ -231,15 +231,42 @@ export async function auditData(
   return row?.data ?? null;
 }
 
-/** Whether anyone has printed the hunt's checkpoint posters (recorded by the print page). */
-export async function hasPrinted(huntId: string, what: "checkpoints" | "poster" | "team_cards"): Promise<boolean> {
-  const row = await db
-    .select({ id: auditLog.id })
+/**
+ * Checkpoint posters that have been printed, as "taskId:code" keys. Each print
+ * of the poster page records the checkpoints it showed with their codes at
+ * the time, so a new checkpoint, or a code generated since, counts as not
+ * printed yet.
+ */
+export async function printedCheckpointKeys(huntId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ data: auditLog.data })
     .from(auditLog)
-    .where(and(eq(auditLog.huntId, huntId), eq(auditLog.action, `print.${what}`)))
+    .where(and(eq(auditLog.huntId, huntId), eq(auditLog.action, "print.checkpoints")));
+  const keys = new Set<string>();
+  for (const row of rows) {
+    const printed = row.data?.tasks;
+    if (!Array.isArray(printed)) continue;
+    for (const t of printed as { id?: unknown; code?: unknown }[]) {
+      if (typeof t?.id === "string" && typeof t.code === "string") keys.add(checkpointKey(t.id, t.code));
+    }
+  }
+  return keys;
+}
+
+export function checkpointKey(taskId: string, code: string): string {
+  return `${taskId}:${code}`;
+}
+
+/** When the hunt was last archived, from its activity log (null if unknown). */
+export async function archivedAt(huntId: string): Promise<Date | null> {
+  const row = await db
+    .select({ at: auditLog.createdAt })
+    .from(auditLog)
+    .where(and(eq(auditLog.huntId, huntId), eq(auditLog.action, "hunt.archive")))
+    .orderBy(desc(auditLog.createdAt))
     .limit(1)
     .get();
-  return !!row;
+  return row?.at ?? null;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,17 @@
 import { and, eq } from "drizzle-orm";
 import type { Metadata } from "next";
 import { CheckpointLanding, type LandingState } from "@/components/task/checkpoint-landing";
+import { StopScreen, StopScreenFrame } from "@/components/task/stop-screen";
 import { ButtonLink } from "@/components/ui/button";
 import { ControlMarker, StartMark } from "@/components/ui/control";
 import { getPlayerHunt } from "@/lib/auth/access";
 import { db } from "@/lib/db";
-import { submissions } from "@/lib/db/schema";
+import { type Hunt, submissions } from "@/lib/db/schema";
 import { formatDateTime, formatTime } from "@/lib/format";
 import { huntPhase, isTaskVisible, submissionBlockReason } from "@/lib/hunts";
 import { normalizeCode } from "@/lib/ids";
+import { joinPolicy } from "@/lib/player/join";
+import { codeGuard } from "@/lib/player/queries";
 import { checkpointLookupLimit, findCheckpointTask } from "@/lib/player/submit";
 import { getStandings } from "@/lib/scoring/service";
 import { links } from "@/lib/url";
@@ -25,12 +28,23 @@ function safeDecode(value: string): string {
   }
 }
 
-function Centered({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-[calc(100dvh-13rem)] flex-col items-center justify-center py-8 text-center">
-      <div className="flex max-w-sm flex-col items-center">{children}</div>
-    </div>
-  );
+/**
+ * The hunt code for a visitor's join link, when starting a team needs it and
+ * the scanned checkpoint is real: someone holding a working checkpoint poster
+ * is at the event, and a checkpoint poster doesn't show the hunt code. A code
+ * that matches nothing counts as a wrong hunt code for the network, so this
+ * can't be used to guess either.
+ */
+async function huntCodeForVisitor(hunt: Hunt, code: string): Promise<string | null> {
+  if (!joinPolicy(hunt, huntPhase(hunt)).needsHuntCode) return null;
+  const guard = await codeGuard("hunt");
+  if (guard.retryAfterSec) return null;
+  const task = code ? await findCheckpointTask(hunt.id, code) : null;
+  if (!task || task.hidden) {
+    guard.miss();
+    return null;
+  }
+  return hunt.joinCode;
 }
 
 /**
@@ -57,50 +71,59 @@ export default async function CheckpointPage({ params }: { params: Params }) {
           ? ` from ${formatTime(task.unlockAt, hunt.timezone)}, when the task opens`
           : "";
       return (
-        <Centered>
-          <ControlMarker
-            code={task?.code ?? "?"}
-            state={!task ? "rejected" : task.hidden || opensLater ? "locked" : "todo"}
-            size="xl"
-          />
-          <h1 className="mt-8 font-cond text-4xl font-extrabold tracking-tight text-balance">
-            {!task
-              ? "This code doesn't match a checkpoint"
-              : task.hidden
-                ? "This poster works, but its task is hidden"
-                : "This poster works"}
-          </h1>
-          <p className="mt-3 text-lg text-ink-2">
-            {task
-              ? `It punches control ${task.code}, “${task.title}”, for the team that scans it${when}. You're signed in as staff, so nothing was punched.`
-              : `No checkpoint task in ${hunt.name} uses the code ${code || rawCode}. Check the code in the task editor.`}
-          </p>
-          <div className="mt-8 flex w-full max-w-xs flex-col gap-2">
-            <ButtonLink href={links.manage(hunt.id)} size="lg" variant="secondary">
-              Open the organizer view
-            </ButtonLink>
-          </div>
-        </Centered>
+        <StopScreenFrame>
+          <StopScreen
+            mark={
+              <ControlMarker
+                code={task?.code ?? "?"}
+                state={!task ? "rejected" : task.hidden || opensLater ? "locked" : "todo"}
+                size="xl"
+                label={task ? `Control ${task.code}` : "Checkpoint"}
+              />
+            }
+            title={
+              !task
+                ? "This code doesn’t match a checkpoint"
+                : task.hidden
+                  ? "This poster works, but its task is hidden"
+                  : "This poster works"
+            }
+            actions={
+              <ButtonLink href={links.manage(hunt.id)} size="lg" variant="secondary">
+                Open the organizer view
+              </ButtonLink>
+            }
+          >
+            <p>
+              {task
+                ? `It punches control ${task.code}, “${task.title}”, for the team that scans it${when}. You’re signed in as staff, so nothing was punched.`
+                : `No checkpoint task in ${hunt.name} uses the code ${code || rawCode}. Check the code in the task editor.`}
+            </p>
+          </StopScreen>
+        </StopScreenFrame>
       );
     }
     const over = phase === "ended" || phase === "archived";
+    const huntCode = over ? null : await huntCodeForVisitor(hunt, code);
+    const joinHref = `${links.hunt(slug)}?next=${encodeURIComponent(here)}${huntCode ? `&code=${huntCode}` : ""}`;
     return (
-      <Centered>
-        <StartMark size={64} />
-        <h1 className="mt-8 font-cond text-4xl font-extrabold tracking-tight text-balance">
-          {over ? `${hunt.name} is over` : `You found a checkpoint for ${hunt.name}`}
-        </h1>
-        <p className="mt-3 text-lg text-ink-2">
-          {over
-            ? "Checkpoints can't be punched any more, but the results are still up."
-            : "Join the hunt on this phone to punch it. You'll come straight back here."}
-        </p>
-        <div className="mt-8 flex w-full max-w-xs flex-col gap-2">
-          <ButtonLink href={over ? links.hunt(slug) : `${links.hunt(slug)}?next=${encodeURIComponent(here)}`} size="lg">
-            {over ? "See the results" : "Join the hunt"}
-          </ButtonLink>
-        </div>
-      </Centered>
+      <StopScreenFrame>
+        <StopScreen
+          mark={<StartMark size={64} />}
+          title={over ? `${hunt.name} is over` : `You found a checkpoint for ${hunt.name}`}
+          actions={
+            <ButtonLink href={over ? links.hunt(slug) : joinHref} size="lg">
+              {over ? "See the results" : "Join the hunt"}
+            </ButtonLink>
+          }
+        >
+          <p>
+            {over
+              ? "Checkpoints can’t be punched any more, but the results are still up."
+              : "Join the hunt on this phone to punch it. You’ll come straight back here."}
+          </p>
+        </StopScreen>
+      </StopScreenFrame>
     );
   }
 
@@ -152,6 +175,7 @@ export default async function CheckpointPage({ params }: { params: Params }) {
     <CheckpointLanding
       huntId={hunt.id}
       slug={slug}
+      teamId={me.team.id}
       code={code}
       huntName={hunt.name}
       task={task && !task.hidden ? { id: task.id, code: task.code, title: reveal ? task.title : "" } : null}

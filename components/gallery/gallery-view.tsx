@@ -4,13 +4,12 @@ import { Play } from "lucide-react";
 import { useState } from "react";
 import { ControlMarker } from "@/components/ui/control";
 import { TeamAvatar } from "@/components/ui/team-badge";
-import { describeMedia, type FeedTask, type FeedTeam, type GalleryItem } from "@/lib/live/types";
+import type { GalleryGroup } from "@/lib/live/gallery-groups";
+import type { GalleryItem } from "@/lib/live/types";
 import { cn } from "@/lib/utils";
 import { Lightbox } from "./lightbox";
 
-export type GalleryGroup =
-  | { key: string; by: "task"; task: FeedTask; items: GalleryItem[] }
-  | { key: string; by: "team"; team: FeedTeam; items: GalleryItem[] };
+export type { GalleryGroup };
 
 const THUMB_MAX = 480;
 
@@ -31,7 +30,8 @@ function thumbSize(item: GalleryItem): { width: number; height: number } {
 /**
  * The gallery: one section per task (or team), each a justified row layout
  * that keeps every photo's shape. Tapping a photo opens the lightbox, which
- * steps through all photos on the page in order.
+ * steps through all photos on the page in order. Big hunts come a page at a
+ * time (lib/live/gallery-groups.ts): a group cut by a page break says so.
  */
 export function GalleryView({ groups, timezone }: { groups: GalleryGroup[]; timezone: string }) {
   const all = groups.flatMap((g) => g.items);
@@ -56,7 +56,8 @@ export function GalleryView({ groups, timezone }: { groups: GalleryGroup[]; time
                 <span className="min-w-0 truncate font-cond text-2xl font-bold">
                   {group.by === "task" ? group.task.title : group.team.name}
                 </span>
-                <span className="ml-auto shrink-0 text-sm text-ink-2">{describeMedia(group.items)}</span>
+                {group.continued ? <span className="shrink-0 text-sm text-ink-2">continued</span> : null}
+                <span className="ml-auto shrink-0 text-sm text-ink-2">{group.summary}</span>
               </h2>
               <ul className="flex flex-wrap gap-1.5 [--row:7.5rem] sm:[--row:10.5rem]">
                 {group.items.map((item, j) => (

@@ -4,6 +4,7 @@ import { AuthLinks, AuthScreen, MascotNote, PlayerNote, TextLink } from "@/compo
 import { InviteHuntCard, SignedInAs } from "@/components/auth/invite-parts";
 import { ButtonLink } from "@/components/ui/button";
 import { Notice } from "@/components/ui/misc";
+import { canCreateHunts } from "@/lib/auth/access";
 import { getSession } from "@/lib/auth/session";
 import { db } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -21,8 +22,16 @@ export default async function InvitePage({ params }: Props) {
   const user = session?.user ?? null;
   const here = `/invite/${token}`;
 
+  // Who's opening it: someone already on the invite's hunt (say, reopening a link they
+  // accepted, since used up or expired) just needs to get back in, whatever the link says.
+  const hunt = view?.hunt ?? null;
+  const current = user && hunt && !user.isAdmin ? await getMembershipRole(db, hunt.id, user.id) : null;
+  const alreadyCovered = Boolean(
+    view && hunt && user && (user.isAdmin || (current && !upgradedRole(current, view.invite.role))),
+  );
+
   // Broken links -----------------------------------------------------------------
-  if (!view || view.status !== "active") {
+  if (!view || (view.status !== "active" && !alreadyCovered)) {
     const copy = view
       ? inviteProblemCopy(view.status as Exclude<typeof view.status, "active">, {
           inviterName: view.inviterName,
@@ -30,9 +39,26 @@ export default async function InvitePage({ params }: Props) {
         })
       : inviteProblemCopy("missing");
     return (
-      <AuthScreen title={copy.title} description={<p>{copy.body}</p>} note={<PlayerNote />}>
+      <AuthScreen
+        title={copy.title}
+        description={
+          <>
+            <p>{copy.body}</p>
+            {hunt && current ? (
+              <p className="mt-2">
+                You're still {ROLE_NOUN[current]} on {hunt.name}.
+              </p>
+            ) : null}
+          </>
+        }
+        note={hunt && current ? undefined : <PlayerNote />}
+      >
         <div className="flex flex-col gap-3">
-          {view?.hunt && user ? (
+          {hunt && current ? (
+            <ButtonLink href={`/manage/${hunt.id}`} size="lg" className="w-full">
+              Open the hunt
+            </ButtonLink>
+          ) : hunt && user ? (
             <ButtonLink href="/dashboard" size="lg" className="w-full">
               Go to your hunts
             </ButtonLink>
@@ -49,7 +75,7 @@ export default async function InvitePage({ params }: Props) {
   const inviter = view.inviterName ? firstName(view.inviterName) : null;
 
   // Platform invite: create an organizer account ---------------------------------------
-  if (!view.hunt) {
+  if (!hunt) {
     return (
       <AuthScreen
         title={
@@ -65,14 +91,22 @@ export default async function InvitePage({ params }: Props) {
           </MascotNote>
         }
       >
-        {user ? (
+        {user && canCreateHunts(user) ? (
           <div className="flex flex-col gap-5">
-            <Notice tone="info" title="You already have an account">
-              This invite is for creating a new organizer account, and you're signed in already.
+            <Notice tone="info" title="Your account can already create hunts">
+              This invite gives organizer access, and you have it already.
             </Notice>
-            <ButtonLink href="/dashboard" size="lg" className="w-full">
-              Go to your hunts
+            <ButtonLink href="/dashboard/new" size="lg" className="w-full">
+              Create a hunt
             </ButtonLink>
+            <SignedInAs user={user} returnTo={here} />
+          </div>
+        ) : user ? (
+          <div className="flex flex-col gap-5">
+            <p className="text-ink-2">
+              Accept to create and run your own hunts with this account. The hunts you already work on stay as they are.
+            </p>
+            <AcceptInviteForm token={token} />
             <SignedInAs user={user} returnTo={here} />
           </div>
         ) : (
@@ -92,7 +126,6 @@ export default async function InvitePage({ params }: Props) {
   }
 
   // Hunt invite -------------------------------------------------------------------------
-  const hunt = view.hunt;
   const role = view.invite.role;
   // Keep "co-own" in one piece: a headline broken at its hyphen reads badly.
   const verb = <span className="whitespace-nowrap">{ROLE_VERB[role]}</span>;
@@ -105,9 +138,6 @@ export default async function InvitePage({ params }: Props) {
       You're invited to {verb} {hunt.name}
     </>
   );
-  const current = user && !user.isAdmin ? await getMembershipRole(db, hunt.id, user.id) : null;
-  const alreadyCovered = user?.isAdmin || (user && current && !upgradedRole(current, role));
-
   return (
     <AuthScreen
       title={title}

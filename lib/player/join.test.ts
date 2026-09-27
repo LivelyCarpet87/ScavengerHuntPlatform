@@ -9,9 +9,8 @@ import {
   sanitizeCodeTyping,
   teamNameCandidates,
   teamNameKey,
-  zTeamCode,
-  zTeamName,
 } from "./join";
+import { zTeamCode, zTeamName } from "./join-schemas";
 
 const ORIGIN = "https://hunt.example.com";
 

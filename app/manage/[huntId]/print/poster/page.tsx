@@ -12,10 +12,13 @@ import { db } from "@/lib/db";
 import { tasks } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { formatDateTime } from "@/lib/format";
+import { staffTitle } from "@/lib/staff/metadata";
 import { absoluteUrl, baseUrl, links } from "@/lib/url";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Join poster" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Join poster");
+}
 
 export default async function PosterPage({ params }: { params: Promise<{ huntId: string }> }) {
   const { huntId } = await params;

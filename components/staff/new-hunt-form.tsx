@@ -148,6 +148,7 @@ export function NewHuntForm({
           </div>
           <ChoiceCards
             name="template"
+            label="Start from"
             options={options}
             defaultValue={initialTemplate}
             columns={1}
@@ -174,7 +175,10 @@ export function NewHuntForm({
           />
         </section>
 
-        <div className="sticky bottom-0 z-10 -mx-4 flex flex-col gap-3 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+        <div
+          data-bottom-bar
+          className="sticky bottom-0 z-10 -mx-4 flex flex-col gap-3 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none"
+        >
           <FormMessage state={state} />
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-5">
             <Button type="submit" size="lg" pending={pending} className="w-full md:w-auto">

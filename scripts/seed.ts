@@ -21,8 +21,9 @@ import { db } from "../lib/db";
 import { runMigrations } from "../lib/db/migrate";
 import * as s from "../lib/db/schema";
 import { env } from "../lib/env";
+import { formatTime } from "../lib/format";
 import { newCode, newId } from "../lib/ids";
-import { storeUpload } from "../lib/storage";
+import { storePoster, storeUpload } from "../lib/storage";
 
 const reset = process.argv.includes("--reset");
 // --hours N keeps the live demo hunt running for N more hours (default 55 minutes),
@@ -33,6 +34,35 @@ const MIN = 60_000;
 const now = Date.now();
 const at = (offsetMin: number) => new Date(now + offsetMin * MIN);
 const tokenHash = (t: string) => createHash("sha256").update(t).digest("hex");
+/** Every demo hunt runs on London time; copy that mentions a time is written from the seeded schedule. */
+const TZ = "Europe/London";
+const LIVE_STARTED_MIN_AGO = 95;
+
+/** 150 → "Two and a half hours" (to the nearest half hour). */
+function hoursInWords(minutes: number): string {
+  const words = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve"];
+  const halves = Math.max(1, Math.round(minutes / 30));
+  const whole = Math.floor(halves / 2);
+  const half = halves % 2 === 1;
+  if (whole === 0) return "Half an hour";
+  const n = words[whole] ?? String(whole);
+  return half ? `${n} and a half hours` : `${n} ${whole === 1 ? "hour" : "hours"}`;
+}
+
+/** Noon on London time, `days` days from now. */
+function noonInDays(days: number): Date {
+  const day = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at(days * 24 * 60));
+  const utcNoon = Date.parse(`${day}T12:00:00Z`);
+  const hourThere = Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }).format(utcNoon),
+  );
+  return new Date(utcNoon - (hourThere - 12) * 60 * MIN);
+}
 
 async function wipe() {
   const tables = [
@@ -81,6 +111,76 @@ async function fakePhoto(seedText: string, hue: number, caption: string): Promis
   return new Blob([new Uint8Array(buf)], { type: "image/jpeg" });
 }
 
+/** An EBML element with an 8-byte size (valid, and simple to write). */
+function ebml(id: number[], ...body: Buffer[]): Buffer {
+  const payload = Buffer.concat(body);
+  const size = Buffer.alloc(8);
+  size.writeBigUInt64BE(BigInt(payload.length) | (1n << 56n));
+  return Buffer.concat([Buffer.from(id), size, payload]);
+}
+const uintBytes = (n: number, bytes: number) => {
+  const b = Buffer.alloc(bytes);
+  b.writeUIntBE(n, 0, bytes);
+  return b;
+};
+
+/**
+ * A three-second "video" for video tasks: a WebM slideshow of three VP8 key
+ * frames (sharp's lossy WebP is a VP8 frame inside a RIFF wrapper), plus the
+ * poster frame the phone would capture.
+ */
+async function fakeVideo(seedText: string, hue: number, caption: string): Promise<{ video: Blob; poster: Blob }> {
+  const [w, h] = [640, 480];
+  const frames: Buffer[] = [];
+  let poster: Buffer | null = null;
+  for (const [i, line] of [caption, `${caption} ♪`, `${caption} ♪ ♪`].entries()) {
+    const photo = Buffer.from(await (await fakePhoto(`${seedText}${i}`, hue, line)).arrayBuffer());
+    const frame = sharp(photo).resize(w, h);
+    poster ??= await frame.clone().jpeg({ quality: 80 }).toBuffer();
+    const webp = await frame.webp({ quality: 70 }).toBuffer();
+    if (webp.toString("latin1", 12, 16) !== "VP8 ") throw new Error("expected a simple lossy WebP");
+    frames.push(webp.subarray(20, 20 + webp.readUInt32LE(16)));
+  }
+  const duration = Buffer.alloc(8);
+  duration.writeDoubleBE(frames.length * 1000);
+  const webm = Buffer.concat([
+    ebml(
+      [0x1a, 0x45, 0xdf, 0xa3], // EBML header
+      ebml([0x42, 0x86], uintBytes(1, 1)),
+      ebml([0x42, 0xf7], uintBytes(1, 1)),
+      ebml([0x42, 0xf2], uintBytes(4, 1)),
+      ebml([0x42, 0xf3], uintBytes(8, 1)),
+      ebml([0x42, 0x82], Buffer.from("webm")),
+      ebml([0x42, 0x87], uintBytes(2, 1)),
+      ebml([0x42, 0x85], uintBytes(2, 1)),
+    ),
+    ebml(
+      [0x18, 0x53, 0x80, 0x67], // Segment
+      ebml([0x15, 0x49, 0xa9, 0x66], ebml([0x2a, 0xd7, 0xb1], uintBytes(1_000_000, 4)), ebml([0x44, 0x89], duration)),
+      ebml(
+        [0x16, 0x54, 0xae, 0x6b], // Tracks › TrackEntry: 1, video, VP8, w×h
+        ebml(
+          [0xae],
+          ebml([0xd7], uintBytes(1, 1)),
+          ebml([0x73, 0xc5], uintBytes(1, 1)),
+          ebml([0x83], uintBytes(1, 1)),
+          ebml([0x86], Buffer.from("V_VP8")),
+          ebml([0xe0], ebml([0xb0], uintBytes(w, 2)), ebml([0xba], uintBytes(h, 2))),
+        ),
+      ),
+      ebml(
+        [0x1f, 0x43, 0xb6, 0x75], // Cluster: one key frame a second
+        ebml([0xe7], uintBytes(0, 1)),
+        ...frames.map((f, i) => ebml([0xa3], Buffer.from([0x81]), uintBytes(i * 1000, 2), Buffer.from([0x80]), f)),
+      ),
+    ),
+  ]);
+  return {
+    video: new Blob([new Uint8Array(webm)], { type: "video/webm" }),
+    poster: new Blob([new Uint8Array(poster ?? Buffer.alloc(0))], { type: "image/jpeg" }),
+  };
+}
+
 type TaskSeed = Partial<typeof s.tasks.$inferInsert> & { code: number; title: string };
 
 async function createHunt(opts: {
@@ -90,7 +190,7 @@ async function createHunt(opts: {
 }) {
   const [hunt] = await db
     .insert(s.hunts)
-    .values({ status: "published", timezone: "Europe/London", createdBy: opts.ownerId, ...opts.hunt })
+    .values({ status: "published", timezone: TZ, createdBy: opts.ownerId, ...opts.hunt })
     .returning();
   await db.insert(s.huntStaff).values({ huntId: hunt.id, userId: opts.ownerId, role: "owner" });
   const tasks = await db
@@ -138,11 +238,10 @@ async function main() {
     hunt: {
       name: "Campus Night Hunt",
       slug: "campus-night-hunt",
-      tagline: "Twelve controls hidden across campus. Two and a half hours. Bring a torch.",
-      description:
-        "Meet at the **main fountain** at 19:00 for the briefing.\n\n- Stay together: photos need at least three of you in frame\n- No running inside buildings\n- Checkpoint QR codes are posted at eye level — leave them where they are\n\nStuck? Hints cost points, but they’re cheaper than wandering.",
+      tagline: `Twelve controls hidden across campus. ${hoursInWords(LIVE_STARTED_MIN_AGO + LIVE_MINUTES_LEFT)}. Bring a torch.`,
+      description: `Meet at the **main fountain** at ${formatTime(at(-LIVE_STARTED_MIN_AGO - 15), TZ)} for the briefing.\n\n- Stay together: photos need at least three of you in frame\n- No running inside buildings\n- Checkpoint QR codes are posted at eye level — leave them where they are\n\nStuck? Hints cost points, but they’re cheaper than wandering.`,
       joinCode: "482913",
-      startsAt: at(-95),
+      startsAt: at(-LIVE_STARTED_MIN_AGO),
       endsAt: at(LIVE_MINUTES_LEFT),
       freezeAt: at(LIVE_MINUTES_LEFT - 15),
       scoreboardVisibility: "public",
@@ -435,9 +534,21 @@ async function main() {
         createdAt: at(sub.min),
       })
       .returning();
-    if (sub.photo) {
+    if (sub.photo && task.mediaAccept === "video") {
+      // Video-only tasks get a short video (with its poster frame), not a photo.
+      const { video, poster } = await fakeVideo(`${sub.team}${sub.code}`, t.hue, sub.photo);
+      const file = await storeUpload({
+        file: video,
+        name: `${sub.photo.toLowerCase().replace(/\s+/g, "-")}.webm`,
+        huntId: live.id,
+        ownerKind: "submission",
+        ownerId: row.id,
+        allow: ["video"],
+      });
+      await storePoster(file, poster);
+    } else if (sub.photo) {
       await storeUpload({
-        file: await fakePhoto(`${sub.team}${sub.code}`, t.hue, `${t.team.emoji === "🦉" ? "" : ""}${sub.photo}`),
+        file: await fakePhoto(`${sub.team}${sub.code}`, t.hue, sub.photo),
         name: `${sub.photo.toLowerCase().replace(/\s+/g, "-")}.jpg`,
         huntId: live.id,
         ownerKind: "submission",
@@ -477,11 +588,11 @@ async function main() {
   await db.insert(s.announcements).values([
     {
       huntId: live.id,
-      title: "Clock tower opens soon",
-      body: "Control 41 unlocks 25 minutes from now — a new checkpoint worth 70 points.",
+      title: `Clock tower opens at ${formatTime(byCode[41].unlockAt ?? at(25), TZ)}`,
+      body: "Control 41, a new checkpoint worth 70 points, appears in your tasks then.",
       pinned: true,
       createdBy: admin.id,
-      createdAt: at(-30),
+      createdAt: at(-5),
     },
     {
       huntId: live.id,
@@ -501,8 +612,8 @@ async function main() {
       tagline: "Lunchtime hunt around the building. Teams of four, one hour.",
       description: "Register your team now — tasks appear when the hunt starts at noon.",
       joinCode: "705316",
-      startsAt: at(2 * 24 * 60),
-      endsAt: at(2 * 24 * 60 + 60),
+      startsAt: noonInDays(2),
+      endsAt: new Date(noonInDays(2).getTime() + 60 * MIN),
       accent: "water",
       maxTeamSize: 4,
       teamCreation: "players",

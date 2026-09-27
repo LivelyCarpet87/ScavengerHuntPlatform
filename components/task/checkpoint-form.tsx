@@ -1,28 +1,35 @@
 "use client";
 
-import { Keyboard } from "lucide-react";
+import { Keyboard, ScanLine } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useId, useRef, useState } from "react";
 import { parseCheckpointInput } from "@/components/scan/checkpoint-link";
 import { QrScanButton } from "@/components/scan/qr-scanner";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/field";
-import { Spinner } from "@/components/ui/spinner";
+import { Input } from "@/components/ui/field";
 import { ActionBar } from "./action-bar";
 import type { SubmissionReply } from "./send";
 import type { ActionTask } from "./task-types";
 import { useSubmitter } from "./use-submitter";
 
-/** Checkpoints: scan the poster's QR code, or type the code printed under it. */
+/**
+ * Checkpoints: scan the poster's QR code, or type the code printed under it.
+ * Whichever the team is using sits in the pinned action bar on phones, with
+ * any problem right above it (announced, and never behind the bar). Focus
+ * stays on the control that was used while the code is checked, and returns
+ * to the field after a wrong code.
+ */
 export function CheckpointForm({
   huntId,
   slug,
+  teamId,
   task,
   onDone,
   onQueued,
 }: {
   huntId: string;
   slug: string;
+  teamId: string;
   task: ActionTask;
   onDone: (reply: SubmissionReply) => void;
   onQueued: () => void;
@@ -31,7 +38,9 @@ export function CheckpointForm({
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const { submit, busy } = useSubmitter(huntId, task.id);
+  const scanRef = useRef<HTMLButtonElement>(null);
+  const id = useId();
+  const { submit, busy } = useSubmitter(huntId, task.id, teamId);
   const router = useRouter();
 
   /** `fromPoster`: the code came from scanning one of this hunt's poster links. */
@@ -49,8 +58,13 @@ export function CheckpointForm({
         break;
       case "refused":
         // A real poster of this hunt, just not this checkpoint's: punch the one it belongs to.
-        if (fromPoster && outcome.status === 422) router.push(`/h/${slug}/cp/${encodeURIComponent(value)}`);
-        else setError(outcome.error);
+        if (fromPoster && outcome.status === 422) {
+          router.push(`/h/${slug}/cp/${encodeURIComponent(value)}`);
+          break;
+        }
+        setError(outcome.error);
+        // Straight back to the code, ready to fix it.
+        if (!fromPoster) requestAnimationFrame(() => inputRef.current?.select());
         break;
       case "cancelled":
         break;
@@ -67,6 +81,7 @@ export function CheckpointForm({
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (busy) return;
     const parsed = parseCheckpointInput(code);
     if (!parsed) {
       setError("Type the code printed under the QR code.");
@@ -76,73 +91,97 @@ export function CheckpointForm({
     void punch(parsed.code);
   }
 
+  function startTyping() {
+    setError(null);
+    setTyping(true);
+    // Once the field has rendered.
+    setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  const problem = error ? (
+    <p id={`${id}-error`} role="alert" className="mb-2 text-sm font-medium text-danger">
+      {error}
+    </p>
+  ) : null;
+
   return (
     <div className="flex flex-col gap-4">
+      <output aria-live="polite" className="sr-only">
+        {busy ? "Checking the code" : ""}
+      </output>
       <p className="text-ink-2">
         Find the poster at this checkpoint and scan its QR code. Scanning it with your phone’s camera app works too.
       </p>
       {typing ? (
-        <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
-          <Field label="Code on the poster" error={error}>
-            {(p) => (
+        <Button
+          variant="quiet"
+          className="self-start"
+          onClick={() => {
+            setError(null);
+            setTyping(false);
+            setTimeout(() => scanRef.current?.focus(), 0);
+          }}
+        >
+          <ScanLine aria-hidden />
+          Scan the QR code instead
+        </Button>
+      ) : (
+        <Button variant="quiet" onClick={startTyping} className="self-start">
+          <Keyboard aria-hidden />
+          Type the code instead
+        </Button>
+      )}
+      {typing ? (
+        <form onSubmit={onSubmit} noValidate>
+          <ActionBar>
+            <label htmlFor={id} className="mb-1.5 block text-sm font-semibold text-ink">
+              Code on the poster
+            </label>
+            {problem}
+            <div className="flex gap-2">
               <Input
-                {...p}
+                id={id}
                 ref={inputRef}
                 value={code}
                 onChange={(e) => {
                   setCode(e.target.value.toUpperCase());
                   if (error) setError(null);
                 }}
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? `${id}-error` : undefined}
+                // Stays focusable (unlike disabled) while the code is checked, so focus isn't lost.
+                readOnly={busy}
+                aria-busy={busy || undefined}
                 maxLength={40}
-                autoFocus
                 autoComplete="off"
                 autoCapitalize="characters"
                 autoCorrect="off"
                 spellCheck={false}
                 enterKeyHint="go"
-                disabled={busy}
-                className="h-14 font-bib text-2xl tracking-[0.12em]"
+                className="h-14 min-w-0 flex-1 font-bib text-2xl tracking-[0.12em]"
               />
-            )}
-          </Field>
-          <Button type="submit" size="lg" variant="secondary" pending={busy} className="w-full sm:w-auto sm:self-start">
-            Check code
-          </Button>
+              <Button type="submit" size="lg" pending={busy} className="px-5">
+                Check code
+              </Button>
+            </div>
+          </ActionBar>
         </form>
       ) : (
-        <>
-          {error ? (
-            <p role="alert" className="text-sm font-medium text-danger">
-              {error}
-            </p>
-          ) : null}
-          <Button variant="quiet" onClick={() => setTyping(true)} className="self-start">
-            <Keyboard aria-hidden />
-            Type the code instead
-          </Button>
-        </>
-      )}
-      <ActionBar>
-        {busy ? (
-          <p className="flex h-14 items-center justify-center gap-2 font-semibold" aria-live="polite">
-            <Spinner className="size-5 text-accent" />
-            Checking the code
-          </p>
-        ) : (
+        <ActionBar>
+          {problem}
           <QrScanButton
+            buttonRef={scanRef}
             onResult={onScan}
-            onTypeInstead={() => {
-              setTyping(true);
-              // After the sheet has closed and handed focus back.
-              setTimeout(() => inputRef.current?.focus(), 0);
-            }}
+            onTypeInstead={startTyping}
+            pending={busy}
+            pendingLabel="Checking the code"
             label="Scan the checkpoint"
             variant="primary"
             size="lg"
             className="w-full md:w-auto md:min-w-64"
           />
-        )}
-      </ActionBar>
+        </ActionBar>
+      )}
     </div>
   );
 }

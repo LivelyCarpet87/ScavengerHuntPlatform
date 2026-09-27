@@ -1,12 +1,15 @@
 "use client";
 
 import { Ban, Link2, TimerOff, UserCheck } from "lucide-react";
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { CopyButton, ShareButton } from "@/components/ui/copy-button";
 import { RelativeTime } from "@/components/ui/countdown";
+import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Select } from "@/components/ui/field";
 import { FormMessage, fieldError, SubmitButton } from "@/components/ui/form";
 import { toast } from "@/components/ui/toast";
+import type { ActionState } from "@/lib/actions";
 import { createPlatformInviteAction, revokePlatformInviteAction } from "@/lib/platform/admin-actions";
 import { INVITE_LIFETIMES, type InviteStatus } from "@/lib/platform/rules";
 import { cn } from "@/lib/utils";
@@ -51,14 +54,44 @@ function usesText(row: InviteLinkRow): string {
   return `Used ${row.uses} ${row.uses === 1 ? "time" : "times"}`;
 }
 
-function RevokeButton({ id, action }: { id: string; action: (formData: FormData) => void }) {
+/** Same words as a hunt's staff invites: "Turn off link", confirmed first. */
+function RevokeButton({
+  id,
+  action,
+  result,
+}: {
+  id: string;
+  action: (formData: FormData) => void;
+  /** The list's latest "turn off" result: whatever it says, the question has been answered. */
+  result: ActionState;
+}) {
+  const [open, setOpen] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new result closes the dialog
+  useEffect(() => setOpen(false), [result]);
   return (
-    <form action={action}>
-      <input type="hidden" name="inviteId" value={id} />
-      <SubmitButton variant="ghost" pendingLabel="Turning off" className="text-danger">
-        Turn off
-      </SubmitButton>
-    </form>
+    <>
+      <Button variant="ghost" className="text-danger" onClick={() => setOpen(true)}>
+        <Ban aria-hidden />
+        Turn off link
+      </Button>
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Turn off this invite link?"
+        description="The link stops working right away. People who already used it keep their access."
+      >
+        {/* The result is shown by the list: once turned off, this row moves to "Past links". */}
+        <form action={action} className="flex flex-col-reverse gap-2 pt-3 sm:flex-row sm:justify-end">
+          <input type="hidden" name="inviteId" value={id} />
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <SubmitButton variant="danger" pendingLabel="Turning off">
+            Turn off link
+          </SubmitButton>
+        </form>
+      </Dialog>
+    </>
   );
 }
 
@@ -66,10 +99,12 @@ function InviteRow({
   row,
   serverNow,
   revoke,
+  revoked,
 }: {
   row: InviteLinkRow;
   serverNow: number;
   revoke: (formData: FormData) => void;
+  revoked: ActionState;
 }) {
   const active = row.status === "active";
   return (
@@ -105,7 +140,7 @@ function InviteRow({
       {active ? (
         <div className="flex flex-wrap gap-2">
           <CopyButton value={row.url} label="Copy link" variant="quiet" size="md" />
-          <RevokeButton id={row.id} action={revoke} />
+          <RevokeButton id={row.id} action={revoke} result={revoked} />
         </div>
       ) : null}
     </li>
@@ -187,7 +222,7 @@ export function InviteLinks({ invites, serverNow }: { invites: InviteLinkRow[]; 
         {active.length > 0 ? (
           <ul className="divide-y divide-line">
             {active.map((row) => (
-              <InviteRow key={row.id} row={row} serverNow={serverNow} revoke={revoke} />
+              <InviteRow key={row.id} row={row} serverNow={serverNow} revoke={revoke} revoked={revoked} />
             ))}
           </ul>
         ) : (
@@ -208,7 +243,7 @@ export function InviteLinks({ invites, serverNow }: { invites: InviteLinkRow[]; 
           </summary>
           <ul className="divide-y divide-line">
             {past.map((row) => (
-              <InviteRow key={row.id} row={row} serverNow={serverNow} revoke={revoke} />
+              <InviteRow key={row.id} row={row} serverNow={serverNow} revoke={revoke} revoked={revoked} />
             ))}
           </ul>
         </details>

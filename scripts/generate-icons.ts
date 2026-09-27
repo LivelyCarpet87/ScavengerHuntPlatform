@@ -4,16 +4,20 @@
  *   bun run icons        (bun scripts/generate-icons.ts)
  *
  * Outputs (all PNG):
- *   icon-192.png, icon-512.png   "any" purpose: the hedgehog on transparency
- *   maskable-512.png             Android adaptive icon: the hedgehog, with a white
- *                                sticker outline, inside the 80% safe zone on
- *                                open-land yellow (#FFC21A)
- *   apple-touch-icon-180.png     iOS home screen: opaque white background
- *   badge-96.png                 Android notification badge: the logo mark (a
- *                                control circle with the start triangle) in white
- *                                on transparency — Android only uses its alpha
+ *   icon-192.png, icon-512.png           "any" purpose: the hedgehog on transparency,
+ *                                        centred with ANY_PADDING on every side so
+ *                                        launchers and taskbars don't crop or crowd it
+ *   maskable-192.png, maskable-512.png   Android adaptive icon: the hedgehog, with a
+ *                                        white sticker outline, centred on its bounding
+ *                                        box inside the 80% safe zone on open-land
+ *                                        yellow (#FFC21A); the 192 one is also the
+ *                                        install card's picture
+ *   badge-96.png                         Android notification badge: the logo mark (a
+ *                                        control circle with the start triangle) in
+ *                                        white on transparency — Android only uses its alpha
  *
- * app/icon.png, app/apple-icon.png and app/favicon.ico are separate and untouched.
+ * app/icon.png, app/apple-icon.png (the iOS home screen icon) and app/favicon.ico
+ * are separate and untouched.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -23,6 +27,8 @@ const ROOT = path.resolve(import.meta.dir, "..");
 const SOURCE = path.join(ROOT, "public/brand/hedgehog-512.png");
 const OUT = path.join(ROOT, "public/icons");
 const OPEN_LAND_YELLOW = "#FFC21A";
+/** Space around the "any" icons on every side, as a share of the icon's size. */
+const ANY_PADDING = 0.09;
 const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 };
 
 type Geometry = {
@@ -35,6 +41,8 @@ type Geometry = {
   cx: number;
   cy: number;
   radius: number;
+  /** Radius of the circle around the bounding box's centre that holds every visible pixel. */
+  boxRadius: number;
 };
 
 /**
@@ -97,7 +105,8 @@ async function measure(file: string): Promise<Geometry> {
       }
     }
   }
-  return { minX, minY, width: maxX - minX + 1, height: maxY - minY + 1, cx, cy, radius };
+  const boxRadius = farthest((minX + maxX + 1) / 2, (minY + maxY + 1) / 2);
+  return { minX, minY, width: maxX - minX + 1, height: maxY - minY + 1, cx, cy, radius, boxRadius };
 }
 
 /** The mascot cropped to its visible pixels and scaled by `scale`, as a PNG buffer. */
@@ -178,35 +187,29 @@ const g = await measure(SOURCE);
 await fs.mkdir(OUT, { recursive: true });
 console.log(`Generating icons from ${path.relative(ROOT, SOURCE)} into ${path.relative(ROOT, OUT)}/`);
 
-// "any" purpose: the artwork as is.
-await write("icon-192.png", sharp(SOURCE).resize(192, 192, { kernel: "lanczos3" }));
-await write("icon-512.png", sharp(SOURCE).resize(512, 512, { kernel: "lanczos3" }));
+const boxCx = g.minX + g.width / 2;
+const boxCy = g.minY + g.height / 2;
 
-// Maskable: everything that matters inside the centred circle of radius 40% (the safe zone).
-{
-  const size = 512;
-  const outline = 12;
+// "any" purpose: the artwork centred on its bounding box, with room around it.
+for (const size of [192, 512]) {
+  const scale = (size * (1 - 2 * ANY_PADDING)) / Math.max(g.width, g.height);
+  await write(`icon-${size}.png`, sharp(await placed(g, scale, size, boxCx, boxCy)));
+}
+
+// Maskable: centred on the artwork's bounding box (it looks centred in any mask shape), and
+// everything that matters inside the centred circle of radius 40% (the safe zone).
+for (const size of [192, 512]) {
+  const outline = (12 * size) / 512;
   const safeRadius = size * 0.4;
-  const scale = (safeRadius - outline - 4) / g.radius;
-  const art = await placed(g, scale, size, g.cx, g.cy);
+  const scale = (safeRadius - outline - (4 * size) / 512) / g.boxRadius;
+  const art = await placed(g, scale, size, boxCx, boxCy);
   const backing = await sticker(art, size, outline);
   await write(
-    "maskable-512.png",
+    `maskable-${size}.png`,
     sharp({ create: { width: size, height: size, channels: 4, background: OPEN_LAND_YELLOW } }).composite([
       { input: backing },
       { input: art },
     ]),
-  );
-}
-
-// iOS: opaque (transparent pixels turn black on the home screen); iOS rounds the corners itself.
-{
-  const size = 180;
-  const scale = (size * 0.8) / Math.max(g.width, g.height);
-  const art = await placed(g, scale, size, g.minX + g.width / 2, g.minY + g.height / 2);
-  await write(
-    "apple-touch-icon-180.png",
-    sharp({ create: { width: size, height: size, channels: 3, background: "#ffffff" } }).composite([{ input: art }]),
   );
 }
 

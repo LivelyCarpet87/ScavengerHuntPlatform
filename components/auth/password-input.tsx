@@ -21,12 +21,13 @@ export function PasswordInput({ className, ...props }: Omit<ComponentProps<"inpu
         spellCheck={false}
         className={cn("pr-14", className)}
       />
+      {/* A toggle: the name stays "Show password" and aria-pressed says whether it's on. */}
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
         aria-pressed={visible}
-        aria-label={visible ? "Hide password" : "Show password"}
-        title={visible ? "Hide password" : "Show password"}
+        aria-label="Show password"
+        title="Show password"
         className="absolute top-1/2 right-0.5 grid size-11 -translate-y-1/2 place-items-center rounded-md text-ink-2 hover:text-ink"
       >
         {visible ? <EyeOff aria-hidden className="size-5" /> : <Eye aria-hidden className="size-5" />}

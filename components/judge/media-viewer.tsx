@@ -9,13 +9,19 @@ import { Img } from "./img";
 /*
  * The light table: a submission's photos and videos, as large as the space
  * allows. Click a photo to see the original at full resolution (click again
- * to fit); several files get a filmstrip and ← → keys.
+ * to fit); several files get a filmstrip and ← → keys. A zoomed-in photo is
+ * a scrollable region the arrow keys pan (it takes the focus when zoomed).
  */
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   if (!el) return false;
   return el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+}
+
+/** True when a key event happens inside a zoomed-in photo: its arrow keys pan the photo, not the queue. */
+export function inZoomedPhoto(target: EventTarget | null): boolean {
+  return !!(target as Element | null)?.closest?.("[data-zoomed-photo]");
 }
 
 function MediaStageImpl({
@@ -40,13 +46,17 @@ function MediaStageImpl({
   const [index, setIndex] = useState(0);
   const [zoomed, setZoomed] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
+  const zoomButtonRef = useRef<HTMLButtonElement>(null);
   const focusPoint = useRef<{ x: number; y: number } | null>(null);
+  /** The zoomed photo had the focus when it was fitted back: return it to the photo's button. */
+  const refocusButton = useRef(false);
   const file = files[Math.min(index, files.length - 1)];
 
   useEffect(() => {
     if (!keyboard || files.length < 2) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      if (inZoomedPhoto(e.target)) return;
       if (e.key === "ArrowRight") setIndex((i) => (i + 1) % files.length);
       else if (e.key === "ArrowLeft") setIndex((i) => (i - 1 + files.length) % files.length);
       else return;
@@ -63,6 +73,7 @@ function MediaStageImpl({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || isTyping(e.target)) return;
       if (document.querySelector("dialog[open]")) return;
+      refocusButton.current = !!stageRef.current?.contains(document.activeElement);
       setZoomed(false);
       e.preventDefault();
     };
@@ -70,13 +81,22 @@ function MediaStageImpl({
     return () => window.removeEventListener("keydown", onKey);
   }, [zoomed]);
 
-  // Keep the spot that was clicked under the pointer after zooming in.
+  // Keep the spot that was clicked under the pointer after zooming in, and hand
+  // the focus to the zoomed photo so the arrow keys pan it (back to the photo's
+  // button when it fits again, instead of dropping the focus on the page).
   useLayoutEffect(() => {
     const stage = stageRef.current;
+    if (!stage) return;
+    if (!zoomed) {
+      // (The stage stopped being focusable, so the browser has already dropped the focus to the page.)
+      if (refocusButton.current) zoomButtonRef.current?.focus({ preventScroll: true });
+      refocusButton.current = false;
+      return;
+    }
+    stage.focus({ preventScroll: true });
     const point = focusPoint.current;
-    if (!zoomed || !stage || !point) return;
     const img = stage.querySelector("img");
-    if (!img) return;
+    if (!point || !img) return;
     stage.scrollLeft = point.x * img.offsetWidth - stage.clientWidth / 2;
     stage.scrollTop = point.y * img.offsetHeight - stage.clientHeight / 2;
     focusPoint.current = null;
@@ -106,15 +126,29 @@ function MediaStageImpl({
     <div className={cn("flex min-h-0 flex-col gap-3", className)}>
       <div
         ref={stageRef}
+        {...(zoomed
+          ? {
+              "data-zoomed-photo": "",
+              role: "region",
+              tabIndex: 0,
+              "aria-label": "Zoomed-in photo. Arrow keys look around, Esc fits it back.",
+            }
+          : {})}
         className={cn(
           // "Safe" centering: a zoomed photo larger than the window starts at its
           // top-left edge instead of overflowing both ways, so every part can be scrolled to.
           "relative grid min-h-48 place-items-center-safe rounded-lg",
-          zoomed ? cn("overflow-auto overscroll-contain bg-mist-2", zoomClassName) : "overflow-hidden",
+          zoomed
+            ? cn(
+                "overflow-auto overscroll-contain bg-mist-2 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-overprint",
+                zoomClassName,
+              )
+            : "overflow-hidden",
         )}
       >
         {file.kind === "image" ? (
           <button
+            ref={zoomButtonRef}
             type="button"
             onClick={toggleZoom}
             disabled={!canZoom}

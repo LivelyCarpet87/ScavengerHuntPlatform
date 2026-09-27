@@ -46,6 +46,12 @@ export const users = sqliteTable(
     passwordHash: text("password_hash").notNull(),
     /** Platform admins can see and manage every hunt. The first account is an admin. */
     isAdmin: bool("is_admin").notNull().default(false),
+    /**
+     * May create (and duplicate) hunts. Granted to accounts made through open sign-up
+     * or a platform invite; accounts made through a hunt's judge invite only get that
+     * hunt. Admins can always create hunts.
+     */
+    canCreateHunts: bool("can_create_hunts").notNull().default(false),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("users_email_uq").on(t.email)],
@@ -226,7 +232,12 @@ export const players = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
   },
-  (t) => [index("players_team_idx").on(t.teamId), uniqueIndex("players_hunt_session_uq").on(t.huntId, t.sessionId)],
+  (t) => [
+    index("players_team_idx").on(t.teamId),
+    uniqueIndex("players_hunt_session_uq").on(t.huntId, t.sessionId),
+    // "Your hunts" on the landing page, and clearing sessions: every hunt this device plays in.
+    index("players_session_idx").on(t.sessionId),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -393,6 +404,8 @@ export const submissions = sqliteTable(
   },
   (t) => [
     index("submissions_queue_idx").on(t.huntId, t.status, t.createdAt),
+    // The submissions list across every status, newest first.
+    index("submissions_hunt_created_idx").on(t.huntId, t.createdAt),
     index("submissions_team_task_idx").on(t.teamId, t.taskId),
     index("submissions_task_idx").on(t.taskId, t.status),
     uniqueIndex("submissions_team_client_uq").on(t.teamId, t.clientId),
@@ -479,7 +492,11 @@ export const auditLog = sqliteTable(
     data: text("data", { mode: "json" }).$type<Record<string, unknown>>(),
     createdAt: createdAt(),
   },
-  (t) => [index("audit_hunt_idx").on(t.huntId, t.createdAt)],
+  (t) => [
+    index("audit_hunt_idx").on(t.huntId, t.createdAt),
+    // A submission's or team's history ("who changed this score?").
+    index("audit_target_idx").on(t.huntId, t.targetKind, t.targetId),
+  ],
 );
 
 export const pushSubscriptions = sqliteTable(

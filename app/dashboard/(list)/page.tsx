@@ -8,7 +8,7 @@ import { HuntMap } from "@/components/staff/hunt-map";
 import { ButtonLink } from "@/components/ui/button";
 import { Mascot } from "@/components/ui/mascot";
 import { Notice } from "@/components/ui/misc";
-import { requireUser } from "@/lib/auth/access";
+import { canCreateHunts, requireUser } from "@/lib/auth/access";
 import { huntPhase } from "@/lib/hunts";
 import { getStandings } from "@/lib/scoring/service";
 import { auditData, type DashboardHunt, listDashboardHunts } from "@/lib/staff/queries";
@@ -33,6 +33,7 @@ export default async function DashboardPage({
   searchParams: Promise<{ scope?: string; deleted?: string }>;
 }) {
   const user = await requireUser("/dashboard");
+  const creator = canCreateHunts(user);
   const sp = await searchParams;
   const scope = user.isAdmin && sp.scope === "all" ? "all" : "mine";
   const items = await listDashboardHunts(user, scope);
@@ -61,7 +62,11 @@ export default async function DashboardPage({
       <SiteHeader>
         <AccountMenu name={user.name} email={user.email} isAdmin={user.isAdmin} />
       </SiteHeader>
-      <main className="mx-auto flex max-w-6xl flex-col gap-10 px-4 pt-8 pb-28 md:pb-16">
+      <main
+        id="main"
+        tabIndex={-1}
+        className="mx-auto flex max-w-6xl flex-col gap-10 px-4 pt-8 pb-28 md:pb-16 outline-none"
+      >
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <h1 className="font-cond text-4xl font-extrabold tracking-tight sm:text-5xl">
@@ -77,7 +82,7 @@ export default async function DashboardPage({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {user.isAdmin ? <ScopeToggle scope={scope} /> : null}
-            {items.length > 0 ? (
+            {items.length > 0 && creator ? (
               <ButtonLink href="/dashboard/new" className="hidden md:inline-flex">
                 <Plus aria-hidden />
                 New hunt
@@ -93,7 +98,11 @@ export default async function DashboardPage({
         ) : null}
 
         {items.length === 0 ? (
-          <FirstHunt />
+          creator ? (
+            <FirstHunt />
+          ) : (
+            <NoHuntsYet />
+          )
         ) : (
           <>
             {live.length > 0 ? (
@@ -143,8 +152,11 @@ export default async function DashboardPage({
       </main>
 
       {/* Primary action within thumb reach on phones (the first-run screen has its own). */}
-      {items.length > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden">
+      {items.length > 0 && creator ? (
+        <div
+          data-bottom-bar
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden"
+        >
           <ButtonLink href="/dashboard/new" size="lg" className="w-full">
             <Plus aria-hidden />
             New hunt
@@ -192,7 +204,7 @@ function ScopeToggle({ scope }: { scope: "mine" | "all" }) {
   );
   return (
     <nav aria-label="Which hunts" className="inline-flex rounded-md bg-mist p-1">
-      {option("mine", "My hunts")}
+      {option("mine", "Your hunts")}
       {option("all", "All hunts")}
     </nav>
   );
@@ -214,6 +226,20 @@ function Archived({ items }: { items: DashboardHunt[] }) {
         ))}
       </div>
     </details>
+  );
+}
+
+/** For accounts that judge or help run hunts but can't create their own. */
+function NoHuntsYet() {
+  return (
+    <section className="flex flex-col items-center px-6 pt-6 text-center">
+      <Mascot size={112} className="mb-4" />
+      <h2 className="font-cond text-3xl font-extrabold tracking-tight">No hunts to work on yet</h2>
+      <p className="mt-2 max-w-md text-ink-2">
+        Hunts you’re invited to judge or help run appear here as soon as you accept the invite link. To create hunts of
+        your own, ask a platform admin for organizer access.
+      </p>
+    </section>
   );
 }
 

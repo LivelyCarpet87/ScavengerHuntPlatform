@@ -26,11 +26,13 @@ export function PrintTheme() {
 /**
  * The on-screen bar above a print preview: back link, what's being printed,
  * printing tips and the Print button. Hidden on paper. Printing (with the
- * button or Ctrl/Cmd+P) is recorded so the setup checklist can tick it off.
+ * button or Ctrl/Cmd+P) is recorded so the setup checklist can tick it off;
+ * checkpoint posters also record which checkpoints were on the pages.
  */
 export function PrintToolbar({
   huntId,
   what,
+  taskIds,
   title,
   summary,
   backHref,
@@ -40,6 +42,8 @@ export function PrintToolbar({
 }: {
   huntId: string;
   what: "checkpoints" | "poster" | "team_cards";
+  /** Checkpoint posters: the tasks whose posters are on the page. */
+  taskIds?: string[];
   title: string;
   summary: string;
   backHref: string;
@@ -49,18 +53,21 @@ export function PrintToolbar({
   /** Extra controls, e.g. "print all" links. */
   children?: ReactNode;
 }) {
+  // A stable key, so a re-render with the same tasks doesn't re-arm the recorder.
+  const tasksKey = taskIds?.join(",") ?? "";
   useEffect(() => {
     let recorded = false;
     const onBeforePrint = () => {
       if (recorded) return;
       recorded = true;
-      recordPrintAction({ huntId, what }).catch(() => {
+      const ids = tasksKey ? tasksKey.split(",") : undefined;
+      recordPrintAction({ huntId, what, taskIds: ids }).catch(() => {
         recorded = false;
       });
     };
     window.addEventListener("beforeprint", onBeforePrint);
     return () => window.removeEventListener("beforeprint", onBeforePrint);
-  }, [huntId, what]);
+  }, [huntId, what, tasksKey]);
 
   return (
     <div className="mb-6 flex flex-col gap-4 print:hidden">

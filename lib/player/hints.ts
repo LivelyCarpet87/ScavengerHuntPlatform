@@ -29,9 +29,9 @@ export async function revealHint(
   if (!parsed.ok) return parsed.state;
 
   const hint = await db.select().from(hints).where(eq(hints.id, parsed.data.hintId)).get();
-  if (!hint) return fail("That hint doesn't exist any more. Reload the page.");
+  if (!hint) return fail("That hint doesn’t exist any more. Reload the page.");
   const hunt = await getHuntById(hint.huntId);
-  if (!hunt) return fail("That hint doesn't exist any more. Reload the page.");
+  if (!hunt) return fail("That hint doesn’t exist any more. Reload the page.");
   const me = await getPlayer(hunt.id);
   if (!me) return fail("Join the hunt first.");
 
@@ -40,7 +40,7 @@ export async function revealHint(
     .from(tasks)
     .where(and(eq(tasks.id, hint.taskId), eq(tasks.huntId, hunt.id)))
     .get();
-  if (!task) return fail("That hint doesn't exist any more. Reload the page.");
+  if (!task) return fail("That hint doesn’t exist any more. Reload the page.");
 
   const already = await db
     .select({ cost: hintUnlocks.cost })
@@ -57,11 +57,11 @@ export async function revealHint(
       .from(submissions)
       .where(and(eq(submissions.teamId, me.team.id), eq(submissions.taskId, task.id)));
     if (history.some((s) => s.status === "approved")) {
-      return fail("Your team already completed this task, so this hint won't help.");
+      return fail("Your team already completed this task, so this hint won’t help.");
     }
     const wrong = history.filter((s) => s.status === "rejected").length;
     if (task.kind === "answer" && task.maxAttempts != null && wrong >= task.maxAttempts) {
-      return fail("Your team is out of attempts for this task, so this hint won't help.");
+      return fail("Your team is out of attempts for this task, so this hint won’t help.");
     }
   }
 

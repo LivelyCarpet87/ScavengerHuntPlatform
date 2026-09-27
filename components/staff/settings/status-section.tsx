@@ -36,8 +36,8 @@ export function StatusSection({
     return (
       <div className="flex flex-col gap-3">
         <p>
-          <span className="font-semibold">Archived.</span> Results stay visible, nothing more can be submitted, and it
-          sits in the archive on your dashboard.
+          <span className="font-semibold">Archived.</span> Results stay visible. Nothing more can be submitted, and its
+          tasks, teams and scores are read-only. It sits in the archive on your dashboard.
         </p>
         <div>
           <ConfirmAction
@@ -83,7 +83,7 @@ export function StatusSection({
           icon={<Archive aria-hidden />}
           variant="ghost"
           title={`Archive “${huntName}”?`}
-          description="Results stay visible to players, but nothing more can be submitted. It moves to the archive on your dashboard, and you can restore it any time."
+          description="Results stay visible to players, but nothing more can be submitted, and its tasks, teams and scores become read-only. It moves to the archive on your dashboard, and you can restore it any time."
           confirmLabel="Archive hunt"
           confirmVariant="primary"
         />

@@ -1,12 +1,12 @@
 "use server";
 
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { type ActionState, fail, ok, parseForm, zCheckbox, zOptionalDate } from "@/lib/actions";
 import { audit } from "@/lib/audit";
-import { requireStaff, requireUser } from "@/lib/auth/access";
+import { CANNOT_CREATE_HUNTS, canCreateHunts, requireStaff, requireUser } from "@/lib/auth/access";
 import { db } from "@/lib/db";
 import {
   ACCENTS,
@@ -32,6 +32,7 @@ import { FIRST_TASK_CODE, getTemplate, type HuntTemplate } from "@/lib/templates
 import { isValidTimeZone, revalidateHunt, runBatch } from "./batch";
 import { freeSlug, isUniqueViolation, SLUG_PATTERN, slugTaken, uniqueJoinCode } from "./codes";
 import { copyFiles, ownedFiles } from "./files";
+import { archivedError } from "./guards";
 import { parseLines } from "./text";
 import { zId, zLongText, zOptFile, zOptNumber, zOptText, zText } from "./zod";
 
@@ -164,6 +165,7 @@ const CreateSchema = z
 
 export async function createHuntAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const user = await requireUser("/dashboard/new");
+  if (!canCreateHunts(user)) return fail(CANNOT_CREATE_HUNTS);
   const parsed = parseForm(CreateSchema, formData);
   if (!parsed.ok) return parsed.state;
   const d = parsed.data;
@@ -246,6 +248,8 @@ export async function duplicateHuntAction(_prev: ActionState, formData: FormData
   const parsed = parseForm(HuntOnly, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  // A copy is a new hunt, so it needs the right to create hunts, not just a role on this one.
+  if (!canCreateHunts(user)) return fail(CANNOT_CREATE_HUNTS);
 
   const [srcTasks, srcHints] = await Promise.all([
     db.select().from(tasks).where(eq(tasks.huntId, hunt.id)),
@@ -298,7 +302,8 @@ export async function duplicateHuntAction(_prev: ActionState, formData: FormData
           joinCode,
           joinMode: hunt.joinMode,
           teamCreation: hunt.teamCreation,
-          registrationOpen: hunt.registrationOpen,
+          // A new run takes registrations: closing them was about the old run, like its schedule.
+          registrationOpen: true,
           maxTeamSize: hunt.maxTeamSize,
           scoreboardVisibility: hunt.scoreboardVisibility,
           galleryMode: hunt.galleryMode,
@@ -543,6 +548,8 @@ export async function updateScheduleAction(_prev: ActionState, formData: FormDat
   if (!parsed.ok) return parsed.state;
   const d = parsed.data;
   const { user, hunt } = await requireStaff(d.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const timezone = d.timezone || hunt.timezone;
   await db
     .update(hunts)
@@ -712,6 +719,8 @@ export async function resetHuntAction(_prev: ActionState, formData: FormData): P
   const parsed = parseForm(ConfirmSchema, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "owner");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   if (!nameMatches(parsed.data.confirmName, hunt.name)) {
     return fail("Type the hunt’s name exactly to confirm.", { confirmName: `Type “${hunt.name}” to confirm.` });
   }
@@ -777,22 +786,49 @@ export async function deleteHuntAction(_prev: ActionState, formData: FormData): 
 // Printing
 // ---------------------------------------------------------------------------
 
-const PrintSchema = z.object({ huntId: zId, what: z.enum(["checkpoints", "poster", "team_cards"]) });
+const PrintSchema = z.object({
+  huntId: zId,
+  what: z.enum(["checkpoints", "poster", "team_cards"]),
+  /** Checkpoint posters: the tasks on the printed pages. */
+  taskIds: z.array(zId).max(500).optional(),
+});
 
-/** Recorded when a print page is printed, so the setup checklist can tick "Print checkpoint posters". */
-export async function recordPrintAction(input: { huntId: string; what: string }): Promise<ActionState> {
+/**
+ * Recorded when a print page is printed. For checkpoint posters it keeps which
+ * checkpoints were printed with which codes, so the setup checklist ticks
+ * "Checkpoint posters printed" only once every current poster is on paper.
+ */
+export async function recordPrintAction(input: {
+  huntId: string;
+  what: string;
+  taskIds?: string[];
+}): Promise<ActionState> {
   const parsed = PrintSchema.safeParse(input);
   if (!parsed.success) return fail("Unknown print page.");
   const { user, hunt } = await requireStaff(
     parsed.data.huntId,
     parsed.data.what === "checkpoints" ? "organizer" : "judge",
   );
+  let data: Record<string, unknown> | undefined;
+  if (parsed.data.what === "checkpoints") {
+    // The codes come from the database, not the page: a poster counts for the code it carried.
+    const ids = parsed.data.taskIds ?? [];
+    const printed =
+      ids.length === 0
+        ? []
+        : await db
+            .select({ id: tasks.id, code: tasks.checkpointCode })
+            .from(tasks)
+            .where(and(eq(tasks.huntId, hunt.id), eq(tasks.kind, "checkpoint"), inArray(tasks.id, ids)));
+    data = { tasks: printed.filter((t) => t.code).map((t) => ({ id: t.id, code: t.code })) };
+  }
   await audit({
     huntId: hunt.id,
     actorUserId: user.id,
     action: `print.${parsed.data.what}`,
     targetKind: "hunt",
     targetId: hunt.id,
+    data,
   });
   if (parsed.data.what === "checkpoints") revalidatePath(`/manage/${hunt.id}`);
   return ok();

@@ -12,6 +12,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { ControlMarker } from "@/components/ui/control";
 import { RelativeTime } from "@/components/ui/countdown";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Markdown } from "@/components/ui/markdown";
 import { Notice } from "@/components/ui/misc";
 import { StatusBadge, StatusGlyph } from "@/components/ui/status";
 import { TeamBadge } from "@/components/ui/team-badge";
@@ -182,7 +183,12 @@ export default async function SubmissionPage({ params }: Props) {
               archived={hunt.status === "archived"}
             />
           </section>
-          <TaskBrief task={task} answerText={task.kind === "answer" ? detail.text : null} hideHeader />
+          <TaskBrief
+            task={task}
+            description={detail.description.trim() ? <Markdown>{detail.description}</Markdown> : null}
+            answerText={task.kind === "answer" ? detail.text : null}
+            hideHeader
+          />
           {organizer ? (
             <DeleteSubmission
               huntId={hunt.id}

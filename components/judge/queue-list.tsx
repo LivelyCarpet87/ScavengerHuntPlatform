@@ -1,8 +1,9 @@
 "use client";
 
-import { Eye, Film, Quote } from "lucide-react";
+import { Clock, Eye, Film, Quote } from "lucide-react";
 import { memo } from "react";
 import { ControlMarker } from "@/components/ui/control";
+import { Spinner } from "@/components/ui/spinner";
 import { TeamAvatar } from "@/components/ui/team-badge";
 import { formatDuration } from "@/lib/format";
 import { firstName } from "@/lib/judging/labels";
@@ -10,9 +11,10 @@ import type { Claim, JudgeTask, JudgeTeam, QueueItem } from "@/lib/judging/types
 import { cn } from "@/lib/utils";
 import { Img } from "./img";
 
-/** Waiting longer than this is flagged (in words and color). */
+/** Waiting longer than this turns the wait yellow. */
 const SLOW_MS = 10 * 60_000;
-const VERY_SLOW_MS = 20 * 60_000;
+/** Waiting longer than this is overdue: red, a clock glyph and the word (never color alone). */
+const OVERDUE_MS = 20 * 60_000;
 
 export function waitLabel(ms: number): string {
   return ms < 60_000 ? "just in" : formatDuration(ms);
@@ -66,6 +68,7 @@ export const QueueList = memo(function QueueList({
   now,
   fresh,
   skipped,
+  more,
   className,
 }: {
   items: QueueItem[];
@@ -80,6 +83,8 @@ export const QueueList = memo(function QueueList({
   /** Items that arrived while the queue was open. */
   fresh: ReadonlySet<string>;
   skipped: ReadonlySet<string>;
+  /** More submissions wait past the loaded ones: how many, and loading the next batch. */
+  more: { waiting: number; next: number; onMore: () => void; loading: boolean } | null;
   className?: string;
 }) {
   return (
@@ -102,11 +107,13 @@ export const QueueList = memo(function QueueList({
         const waited = Math.max(0, now - item.createdAt);
         const wait = waitLabel(waited);
         const slow = waited >= SLOW_MS;
-        const verySlow = waited >= VERY_SLOW_MS;
+        const overdue = waited >= OVERDUE_MS;
+        const isNew = fresh.has(item.id);
         const label = [
           `${task.code} ${task.title}`,
           team.name,
-          waited < 60_000 ? "just sent" : `waiting ${wait}`,
+          waited < 60_000 ? "just sent" : overdue ? `overdue, waiting ${wait}` : `waiting ${wait}`,
+          isNew ? "new" : null,
           claimedByOther ? `${firstName(claim?.name)} is reviewing` : null,
           skipped.has(item.id) ? "skipped" : null,
         ]
@@ -164,10 +171,11 @@ export const QueueList = memo(function QueueList({
               {/* Rail and strip caption */}
               <span
                 className={cn(
-                  "text-xs leading-none font-semibold whitespace-nowrap xl:hidden",
-                  verySlow ? "text-danger" : slow ? "text-sun-fg" : "text-ink-2",
+                  "flex items-center gap-0.5 text-xs leading-none font-semibold whitespace-nowrap xl:hidden",
+                  overdue ? "text-danger" : slow ? "text-sun-fg" : "text-ink-2",
                 )}
               >
+                {overdue ? <Clock aria-hidden className="size-3 shrink-0" /> : null}
                 {wait}
               </span>
 
@@ -183,12 +191,16 @@ export const QueueList = memo(function QueueList({
                     </span>
                   ) : (
                     <span
-                      className={cn("font-semibold", verySlow ? "text-danger" : slow ? "text-sun-fg" : "text-ink-3")}
+                      className={cn(
+                        "flex items-center gap-1 font-semibold",
+                        overdue ? "text-danger" : slow ? "text-sun-fg" : "text-ink-3",
+                      )}
                     >
-                      {waited < 60_000 ? "Just in" : `Waiting ${wait}`}
+                      {overdue ? <Clock aria-hidden className="size-3.5 shrink-0" /> : null}
+                      {waited < 60_000 ? "Just in" : overdue ? `Overdue · ${wait}` : `Waiting ${wait}`}
                     </span>
                   )}
-                  {fresh.has(item.id) ? (
+                  {isNew ? (
                     <span className="rounded-full bg-sun px-1.5 py-0.5 text-[0.7rem] leading-none font-bold text-sun-ink">
                       New
                     </span>
@@ -196,7 +208,7 @@ export const QueueList = memo(function QueueList({
                   {skipped.has(item.id) ? <span className="text-ink-3">Skipped</span> : null}
                 </span>
               </span>
-              {fresh.has(item.id) ? (
+              {isNew ? (
                 <span
                   aria-hidden
                   className="absolute top-1 right-1 size-2.5 rounded-full bg-sun ring-2 ring-paper xl:hidden"
@@ -206,6 +218,27 @@ export const QueueList = memo(function QueueList({
           </li>
         );
       })}
+      {more ? (
+        <li className="shrink-0 xl:shrink">
+          <button
+            type="button"
+            onClick={more.onMore}
+            disabled={more.loading}
+            aria-label={`Show ${more.next} more of the ${more.waiting} still waiting`}
+            className={cn(
+              "flex size-[4.75rem] flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-line-strong text-center text-ink-2 hover:border-ink-3 hover:text-ink",
+              "xl:h-auto xl:w-full xl:flex-row xl:justify-start xl:gap-2 xl:rounded-none xl:border-0 xl:border-b xl:border-line xl:px-4 xl:py-3 xl:text-left xl:hover:bg-mist",
+            )}
+          >
+            {more.loading ? <Spinner className="size-4" /> : null}
+            {/* Rail and strip: "+487 more". Wide rows: "Show 40 more · 487 still waiting". */}
+            <span className="font-bib text-lg leading-none text-ink xl:hidden">+{more.waiting}</span>
+            <span className="text-xs font-semibold xl:hidden">more</span>
+            <span className="hidden text-sm font-semibold text-ink xl:inline">Show {more.next} more</span>
+            <span className="hidden text-sm text-ink-2 xl:inline">{more.waiting} still waiting</span>
+          </button>
+        </li>
+      ) : null}
     </ol>
   );
 });

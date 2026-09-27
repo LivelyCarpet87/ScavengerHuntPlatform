@@ -1,7 +1,7 @@
 "use client";
 
 import { CameraOff, Flashlight, FlashlightOff, Keyboard, RotateCw, ScanLine } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { type Ref, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { Button, type ButtonSize, type ButtonVariant, buttonClass } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -18,10 +18,17 @@ export type QrScanButtonProps = {
   size?: ButtonSize;
   className?: string;
   /**
-   * Optional: offer "Type the code instead" inside the sheet (always, and
-   * prominently when the camera can't be used). Called after the sheet closes.
+   * Offer "Type the code instead" inside the sheet (always, and prominently
+   * when the camera can't be used), e.g. to focus the page's code field.
+   * Called after the sheet closes. Without it, the camera problems still
+   * offer the button, which just closes the sheet.
    */
   onTypeInstead?: () => void;
+  /** What was scanned is being checked: the button says `pendingLabel` and ignores taps, but keeps focus. */
+  pending?: boolean;
+  pendingLabel?: string;
+  /** The button that opens the scanner (it gets focus back when the sheet closes). */
+  buttonRef?: Ref<HTMLButtonElement>;
 };
 
 /** Button that opens a camera QR scanner in a sheet. */
@@ -32,31 +39,90 @@ export function QrScanButton({
   size = "md",
   className,
   onTypeInstead,
+  pending = false,
+  pendingLabel = "Checking",
+  buttonRef,
 }: QrScanButtonProps) {
   const [open, setOpen] = useState(false);
-  const typeInstead = onTypeInstead
-    ? () => {
-        setOpen(false);
-        onTypeInstead();
-      }
-    : undefined;
+  /** The camera can't be used: the sheet's "fit it in the circle" line no longer applies. */
+  const [problem, setProblem] = useState(false);
+  const typeInstead = () => {
+    setOpen(false);
+    // Once the sheet has closed and handed focus back to this button, so the page can move it on.
+    setTimeout(() => onTypeInstead?.(), 0);
+  };
+
+  // Where the browser has no QR reader built in (iPhone), the scanner loads jsQR on first use.
+  // Fetch it while there's signal, so the service worker has it for scanning at a dead-zone checkpoint.
+  useEffect(() => {
+    if (navigator.onLine === false) return;
+    let cancelled = false;
+    const warm = () => {
+      void hasNativeQrReader().then((native) => {
+        if (!native && !cancelled) import("jsqr").catch(() => {});
+      });
+    };
+    // Safari has no requestIdleCallback.
+    if (typeof requestIdleCallback === "function") {
+      const handle = requestIdleCallback(warm, { timeout: 5000 });
+      return () => {
+        cancelled = true;
+        cancelIdleCallback(handle);
+      };
+    }
+    const timer = setTimeout(warm, 2000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, []);
+
   return (
     <>
-      <button type="button" className={buttonClass(variant, size, className)} onClick={() => setOpen(true)}>
-        <ScanLine aria-hidden />
-        {label}
+      <button
+        ref={buttonRef}
+        type="button"
+        className={buttonClass(variant, size, className)}
+        aria-disabled={pending || undefined}
+        onClick={() => {
+          if (pending) return;
+          setProblem(false);
+          setOpen(true);
+        }}
+      >
+        {pending ? <Spinner className="size-4" /> : <ScanLine aria-hidden />}
+        {pending ? pendingLabel : label}
       </button>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
         title={label}
-        description="Fit the QR code inside the circle. It scans by itself."
+        description={problem ? undefined : "Fit the QR code inside the circle. It scans by itself."}
       >
         {/* Mounted only while open, so the camera is off whenever the sheet is closed. */}
-        {open ? <QrScanner onResult={onResult} onDone={() => setOpen(false)} onTypeInstead={typeInstead} /> : null}
+        {open ? (
+          <QrScanner
+            onResult={onResult}
+            onDone={() => setOpen(false)}
+            onTypeInstead={typeInstead}
+            offerTypingWhileLive={!!onTypeInstead}
+            onProblem={setProblem}
+          />
+        ) : null}
       </Dialog>
     </>
   );
+}
+
+/** Whether this browser reads QR codes natively (BarcodeDetector), so jsQR isn't needed. */
+async function hasNativeQrReader(): Promise<boolean> {
+  const Native = (globalThis as { BarcodeDetector?: BarcodeDetectorClass }).BarcodeDetector;
+  if (!Native) return false;
+  try {
+    return ((await Native.getSupportedFormats?.()) ?? ["qr_code"]).includes("qr_code");
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +165,7 @@ async function createDecoder(): Promise<Decoder> {
       // Fall through to jsQR.
     }
   }
+  // Loaded on first use; QrScanButton fetches it ahead of time while there's signal.
   const { default: jsQR } = await import("jsqr");
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -121,10 +188,15 @@ function QrScanner({
   onResult,
   onDone,
   onTypeInstead,
+  offerTypingWhileLive,
+  onProblem,
 }: {
   onResult: QrScanButtonProps["onResult"];
   onDone: () => void;
-  onTypeInstead?: () => void;
+  onTypeInstead: () => void;
+  /** Also offer typing while the camera works (when the page has a code field to go to). */
+  offerTypingWhileLive: boolean;
+  onProblem: (problem: boolean) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -167,7 +239,7 @@ function QrScanner({
         else if (name === "NotFoundError" || name === "OverconstrainedError") setState({ kind: "no-camera" });
         else if (name === "NotReadableError" || name === "AbortError") {
           setState({ kind: "stopped", message: "The camera is busy. Close other apps using it, then try again." });
-        } else setState({ kind: "stopped", message: "The camera couldn't start. Try again." });
+        } else setState({ kind: "stopped", message: "The camera couldn’t start. Try again." });
         return;
       }
       if (cancelled) {
@@ -191,8 +263,15 @@ function QrScanner({
       try {
         decode = await createDecoder();
       } catch {
-        if (!cancelled)
-          setState({ kind: "stopped", message: "This browser can't read QR codes. Type the code instead." });
+        if (!cancelled) {
+          setState({
+            kind: "stopped",
+            message:
+              navigator.onLine === false
+                ? "The QR reader needs signal to load the first time. Type the code instead."
+                : "This browser can’t read QR codes. Type the code instead.",
+          });
+        }
         return;
       }
       if (cancelled) return;
@@ -221,7 +300,7 @@ function QrScanner({
             return;
           }
           rejected.set(text, now + REJECT_COOLDOWN_MS);
-          setHint("That QR code isn't the one we need here. Keep looking.");
+          setHint("That QR code isn’t the one we need here. Keep looking.");
           clearTimeout(hintTimer);
           hintTimer = setTimeout(() => setHint(null), REJECT_COOLDOWN_MS);
         }
@@ -269,6 +348,8 @@ function QrScanner({
 
   const retry = () => setAttempt((n) => n + 1);
   const live = state.kind === "scanning" || state.kind === "starting";
+  const reportProblem = useEffectEvent((problem: boolean) => onProblem(problem));
+  useEffect(() => reportProblem(!live), [live]);
 
   return (
     <div className="flex flex-col gap-3 pb-1">
@@ -314,7 +395,7 @@ function QrScanner({
       ) : (
         <CameraProblem state={state} onRetry={retry} onTypeInstead={onTypeInstead} />
       )}
-      {live && onTypeInstead ? (
+      {live && offerTypingWhileLive ? (
         <Button variant="ghost" onClick={onTypeInstead} className="self-center">
           <Keyboard aria-hidden />
           Type the code instead
@@ -347,7 +428,7 @@ function CameraProblem({
 }: {
   state: ScannerState;
   onRetry: () => void;
-  onTypeInstead?: () => void;
+  onTypeInstead: () => void;
 }) {
   let title = "";
   let body = "";
@@ -360,13 +441,13 @@ function CameraProblem({
       break;
     case "no-camera":
       title = "No camera found";
-      body = "This device doesn't have a camera we can use. Type the code from the poster instead.";
+      body = "This device doesn’t have a camera we can use. Type the code from the poster instead.";
       canRetry = false;
       break;
     case "unsupported":
-      title = "The camera isn't available here";
+      title = "The camera isn’t available here";
       body =
-        "This browser only opens the camera on secure (https) sites. Scan the poster with your phone's camera app, or type the code instead.";
+        "This browser only opens the camera on secure (https) sites. Scan the poster with your phone’s camera app, or type the code instead.";
       canRetry = false;
       break;
     case "stopped":
@@ -382,12 +463,10 @@ function CameraProblem({
       <p className="font-cond text-xl font-bold">{title}</p>
       <p className="max-w-sm text-sm text-ink-2">{body}</p>
       <div className="mt-1 flex w-full max-w-xs flex-col gap-2">
-        {onTypeInstead ? (
-          <Button onClick={onTypeInstead}>
-            <Keyboard aria-hidden />
-            Type the code instead
-          </Button>
-        ) : null}
+        <Button onClick={onTypeInstead}>
+          <Keyboard aria-hidden />
+          Type the code instead
+        </Button>
         {canRetry ? (
           <Button variant="secondary" onClick={onRetry}>
             <RotateCw aria-hidden />

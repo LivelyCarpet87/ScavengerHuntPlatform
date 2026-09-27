@@ -1,13 +1,18 @@
 import { ArrowLeft, Lightbulb, Paperclip } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ArchivedNotice } from "@/components/staff/archived-notice";
 import { TaskForm, type TaskFormValues } from "@/components/staff/task-editor/task-form";
 import { requireStaff } from "@/lib/auth/access";
 import { TASK_KINDS, type TaskKind } from "@/lib/db/schema";
 import { nextTaskCode, uniqueCheckpointCode } from "@/lib/staff/codes";
+import { isArchived } from "@/lib/staff/guards";
+import { staffTitle } from "@/lib/staff/metadata";
 import { taskCategories } from "@/lib/staff/queries";
 
-export const metadata: Metadata = { title: "New task" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "New task", { min: "organizer" });
+}
 
 export default async function NewTaskPage({
   params,
@@ -19,6 +24,24 @@ export default async function NewTaskPage({
   const { huntId } = await params;
   const sp = await searchParams;
   const { hunt } = await requireStaff(huntId, "organizer");
+  const back = (
+    <Link
+      href={`/manage/${hunt.id}/tasks`}
+      className="inline-flex h-11 items-center gap-2 self-start text-sm font-semibold text-ink-2 hover:text-ink"
+    >
+      <ArrowLeft aria-hidden className="size-4" />
+      All tasks
+    </Link>
+  );
+  if (isArchived(hunt)) {
+    return (
+      <div className="flex flex-col gap-6">
+        {back}
+        <h1 className="font-cond text-4xl font-extrabold tracking-tight">New task</h1>
+        <ArchivedNotice huntId={hunt.id}>New tasks can’t be added while it’s archived.</ArchivedNotice>
+      </div>
+    );
+  }
   const [code, checkpointCode, categories] = await Promise.all([
     nextTaskCode(hunt.id),
     uniqueCheckpointCode(hunt.id),
@@ -52,13 +75,7 @@ export default async function NewTaskPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <Link
-        href={`/manage/${hunt.id}/tasks`}
-        className="inline-flex h-11 items-center gap-2 self-start text-sm font-semibold text-ink-2 hover:text-ink"
-      >
-        <ArrowLeft aria-hidden className="size-4" />
-        All tasks
-      </Link>
+      {back}
       <header>
         <h1 className="font-cond text-4xl font-extrabold tracking-tight">New task</h1>
         <p className="mt-1.5 max-w-prose text-ink-2">

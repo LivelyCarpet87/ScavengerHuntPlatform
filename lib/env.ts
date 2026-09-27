@@ -18,6 +18,12 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL || `file:${path.join(/*turbopackIgnore: true*/ dataDir, "app.db")}`,
   databaseAuthToken: process.env.DATABASE_AUTH_TOKEN || undefined,
   maxUploadBytes: Number(process.env.MAX_UPLOAD_MB || 100) * 1024 * 1024,
+  /**
+   * How many proxies in front of the app append to X-Forwarded-For (a CDN in
+   * front of Caddy or nginx makes 2). Rate limits use the entry the outermost
+   * of them added; see lib/rate-limit.ts.
+   */
+  trustedProxyHops: Math.max(1, Math.floor(Number(process.env.TRUSTED_PROXY_HOPS)) || 1),
   cookieSecure:
     process.env.COOKIE_SECURE != null
       ? process.env.COOKIE_SECURE === "true"

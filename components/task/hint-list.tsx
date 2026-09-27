@@ -1,7 +1,7 @@
 "use client";
 
 import { Lightbulb } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { FormMessage, SubmitButton } from "@/components/ui/form";
@@ -24,7 +24,9 @@ function costLabel(cost: number): string {
 
 /**
  * The task's hints in order. Revealed ones show their text; the others offer
- * "Reveal hint (−10)" behind a confirmation that spells out the cost.
+ * "Reveal hint (−10)" behind a confirmation that spells out the cost. Once a
+ * hint is revealed its text takes the button's place, so focus moves to the
+ * text and a status line says what it cost.
  */
 export function HintList({
   hints,
@@ -39,9 +41,35 @@ export function HintList({
 }) {
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [confirming, setConfirming] = useState<HintView | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const [focusHint, setFocusHint] = useState<string | null>(null);
+  const texts = useRef(new Map<string, HTMLParagraphElement>());
+
+  useEffect(() => {
+    if (!focusHint) return;
+    // After the dialog has closed and tried to give focus back to the button that's gone now.
+    const t = setTimeout(() => {
+      texts.current.get(focusHint)?.focus();
+      setFocusHint(null);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [focusHint]);
+
+  function onRevealed(hint: HintView, body: string) {
+    setRevealed((r) => ({ ...r, [hint.id]: body }));
+    setAnnouncement(
+      hint.cost > 0
+        ? `Hint ${hint.number} revealed. ${plural(hint.cost, "point")} taken from your score.`
+        : `Hint ${hint.number} revealed.`,
+    );
+    setFocusHint(hint.id);
+  }
 
   return (
     <>
+      <output aria-live="polite" className="sr-only">
+        {announcement}
+      </output>
       <ol className="flex flex-col divide-y divide-line rounded-lg border border-line">
         {hints.map((hint) => {
           const body = hint.body ?? revealed[hint.id] ?? null;
@@ -67,16 +95,26 @@ export function HintList({
                       Reveal hint {costLabel(hint.cost)}
                     </Button>
                   ) : (
-                    <RevealForm
-                      hint={hint}
-                      label="Reveal hint (free)"
-                      onRevealed={(text) => setRevealed((r) => ({ ...r, [hint.id]: text }))}
-                    />
+                    <RevealForm hint={hint} label="Reveal hint (free)" onRevealed={(text) => onRevealed(hint, text)} />
                   )
                 ) : null}
                 {!body && !canReveal ? <span className="text-sm text-ink-3">Not revealed</span> : null}
               </div>
-              {body ? <p className="leading-relaxed text-pretty">{body}</p> : null}
+              {body ? (
+                <p
+                  ref={(el) => {
+                    if (!el) return;
+                    texts.current.set(hint.id, el);
+                    return () => {
+                      texts.current.delete(hint.id);
+                    };
+                  }}
+                  tabIndex={-1}
+                  className="leading-relaxed text-pretty outline-none"
+                >
+                  {body}
+                </p>
+              ) : null}
             </li>
           );
         })}
@@ -97,7 +135,7 @@ export function HintList({
             hint={confirming}
             label={`Reveal hint ${costLabel(confirming.cost)}`}
             onRevealed={(text) => {
-              setRevealed((r) => ({ ...r, [confirming.id]: text }));
+              onRevealed(confirming, text);
               setConfirming(null);
             }}
             onCancel={() => setConfirming(null)}

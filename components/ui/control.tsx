@@ -9,7 +9,8 @@ import { cn } from "@/lib/utils";
  *   todo      ring
  *   pending   dashed ring on yellow — waiting for a judge
  *   approved  solid disc — punched
- *   rejected  ring with a slash — try again
+ *   rejected  ring with a slash — try again (the code stays on top, haloed
+ *             in paper like map lettering, so it reads through the slash)
  *   locked    dotted grey ring
  */
 
@@ -66,19 +67,23 @@ export function ControlMarker({ code, state = "todo", size = "md", className, la
         strokeDasharray={state === "pending" ? "10 7" : state === "locked" ? "2 8" : undefined}
         strokeLinecap={state === "locked" ? "round" : undefined}
       />
+      {state === "rejected" ? (
+        <line x1="18" y1="82" x2="82" y2="18" stroke="var(--danger)" strokeWidth={sw} strokeLinecap="round" />
+      ) : null}
       <text
         x="50"
         y="50"
         dy="0.35em"
         textAnchor="middle"
         fill={textColor}
+        stroke={state === "rejected" ? "var(--paper)" : undefined}
+        strokeWidth={state === "rejected" ? sw * 1.6 : undefined}
+        strokeLinejoin="round"
+        paintOrder="stroke"
         style={{ fontStretch: "62%", fontWeight: 800, fontSize }}
       >
         {text}
       </text>
-      {state === "rejected" ? (
-        <line x1="18" y1="82" x2="82" y2="18" stroke="var(--danger)" strokeWidth={sw} strokeLinecap="round" />
-      ) : null}
     </svg>
   );
 }

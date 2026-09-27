@@ -28,15 +28,17 @@ export type SubmitPayload = {
 
 export type SubmitOutcome =
   | { kind: "done"; reply: SubmissionReply }
-  | { kind: "refused"; status: number; error: string }
+  /** `code`: the server's SubmitFailureCode, e.g. "already_completed". */
+  | { kind: "refused"; status: number; error: string; code?: string }
   | { kind: "queued" }
   | { kind: "cancelled" };
 
 /**
  * One submission at a time for a task: sends with progress, lets the player
- * cancel, and saves to the on-device queue when the network fails.
+ * cancel, and saves to the on-device queue when the network fails. `teamId`
+ * is the player's team: proof made for it is never counted for another.
  */
-export function useSubmitter(huntId: string, taskId: string) {
+export function useSubmitter(huntId: string, taskId: string, teamId: string) {
   const [phase, setPhase] = useState<SubmitPhase>({ kind: "idle" });
   const cancelRef = useRef<(() => void) | null>(null);
   const mounted = useRef(true);
@@ -61,6 +63,7 @@ export function useSubmitter(huntId: string, taskId: string) {
         clientId: newClientId(),
         huntId,
         taskId,
+        teamId,
         text: payload.text?.trim() || null,
         files,
         poster: payload.poster ?? null,
@@ -73,7 +76,7 @@ export function useSubmitter(huntId: string, taskId: string) {
       const finish = (outcome: SubmitOutcome): SubmitOutcome => {
         setPhase({ kind: "idle" });
         if (outcome.kind === "refused" && !mounted.current) {
-          toast({ title: "Couldn't send an upload", description: `${item.label}: ${outcome.error}`, tone: "danger" });
+          toast({ title: "Couldn’t send an upload", description: `${item.label}: ${outcome.error}`, tone: "danger" });
         }
         return outcome;
       };
@@ -115,13 +118,13 @@ export function useSubmitter(huntId: string, taskId: string) {
             return finish({
               kind: "refused",
               status: 429,
-              error: outcome.error ?? "That's a lot of tries in a short time. Wait a minute and try again.",
+              error: outcome.error ?? "That’s a lot of tries in a short time. Wait a minute and try again.",
             });
           }
           return queue();
       }
     },
-    [huntId, taskId],
+    [huntId, taskId, teamId],
   );
 
   const cancel = useCallback(() => cancelRef.current?.(), []);

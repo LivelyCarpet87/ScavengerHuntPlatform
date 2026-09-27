@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LiveRefresh } from "@/components/live/live-refresh";
 import { ActionButton } from "@/components/staff/action-button";
+import { ArchivedNotice } from "@/components/staff/archived-notice";
 import { ConfirmAction } from "@/components/staff/confirm-action";
 import { type AttachmentData, AttachmentsEditor } from "@/components/staff/task-editor/attachments-editor";
 import { type HintData, HintsEditor } from "@/components/staff/task-editor/hints-editor";
@@ -12,6 +13,8 @@ import { ControlMarker } from "@/components/ui/control";
 import { Notice } from "@/components/ui/misc";
 import { requireStaff } from "@/lib/auth/access";
 import { plural } from "@/lib/format";
+import { isArchived } from "@/lib/staff/guards";
+import { staffTitle } from "@/lib/staff/metadata";
 import {
   getTask,
   hintRevealCounts,
@@ -24,7 +27,20 @@ import { deleteTaskAction, duplicateTaskAction } from "@/lib/staff/task-actions"
 import { fileUrl } from "@/lib/storage";
 import { kindLabel } from "@/lib/tasks";
 
-export const metadata: Metadata = { title: "Edit task" };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ huntId: string; taskId: string }>;
+}): Promise<Metadata> {
+  const { huntId, taskId } = await params;
+  return staffTitle(huntId, "Edit task", {
+    min: "organizer",
+    page: async (hunt) => {
+      const task = await getTask(hunt.id, taskId);
+      return task ? `${task.code} ${task.title}` : null;
+    },
+  });
+}
 
 export default async function EditTaskPage({
   params,
@@ -38,6 +54,8 @@ export default async function EditTaskPage({
   const { hunt } = await requireStaff(huntId, "organizer");
   const task = await getTask(hunt.id, taskId);
   if (!task) notFound();
+  // Archived hunts are read-only: the task shows as it was, without editing.
+  const readOnly = isArchived(hunt);
 
   const [categories, hints, fileRows, submissionCount] = await Promise.all([
     taskCategories(hunt.id),
@@ -122,29 +140,33 @@ export default async function EditTaskPage({
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ActionButton
-            action={duplicateTaskAction}
-            fields={{ huntId: hunt.id, taskId: task.id }}
-            variant="quiet"
-            pendingLabel="Duplicating"
-          >
-            <CopyPlus aria-hidden />
-            Duplicate
-          </ActionButton>
-          <ConfirmAction
-            action={deleteTaskAction}
-            fields={{ huntId: hunt.id, taskId: task.id }}
-            label="Delete"
-            icon={<Trash aria-hidden />}
-            variant="ghost"
-            className="text-danger"
-            title={`Delete ${task.code} “${task.title}”?`}
-            description={deleteDescription}
-            confirmLabel="Delete task"
-          />
-        </div>
+        {readOnly ? null : (
+          <div className="flex flex-wrap items-center gap-2">
+            <ActionButton
+              action={duplicateTaskAction}
+              fields={{ huntId: hunt.id, taskId: task.id }}
+              variant="quiet"
+              pendingLabel="Duplicating"
+            >
+              <CopyPlus aria-hidden />
+              Duplicate
+            </ActionButton>
+            <ConfirmAction
+              action={deleteTaskAction}
+              fields={{ huntId: hunt.id, taskId: task.id }}
+              label="Delete"
+              icon={<Trash aria-hidden />}
+              variant="ghost"
+              className="text-danger"
+              title={`Delete ${task.code} “${task.title}”?`}
+              description={deleteDescription}
+              confirmLabel="Delete task"
+            />
+          </div>
+        )}
       </header>
+
+      {readOnly ? <ArchivedNotice huntId={hunt.id} /> : null}
 
       {sp.copied ? (
         <Notice tone="success" icon={<CircleCheck className="size-4" />} title="Copy created">
@@ -162,10 +184,11 @@ export default async function EditTaskPage({
           submissionCount={submissionCount}
           printHref={task.kind === "checkpoint" ? `/manage/${hunt.id}/print/checkpoints?task=${task.id}` : null}
           cancelHref={`/manage/${hunt.id}/tasks`}
+          readOnly={readOnly}
         />
         <div className="flex flex-col gap-12">
-          <HintsEditor huntId={hunt.id} taskId={task.id} hints={hintData} />
-          <AttachmentsEditor huntId={hunt.id} taskId={task.id} files={attachments} />
+          <HintsEditor huntId={hunt.id} taskId={task.id} hints={hintData} readOnly={readOnly} />
+          <AttachmentsEditor huntId={hunt.id} taskId={task.id} files={attachments} readOnly={readOnly} />
         </div>
       </div>
     </div>

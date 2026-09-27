@@ -1,13 +1,15 @@
-import { ArrowLeft, EyeOff, Printer, RefreshCw, Trash } from "lucide-react";
+import { ArrowLeft, Diff, EyeOff, Printer, RefreshCw, Trash } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { LiveRefresh } from "@/components/live/live-refresh";
+import { ArchivedNotice } from "@/components/staff/archived-notice";
 import { ConfirmAction } from "@/components/staff/confirm-action";
 import { StatCell, StatStrip } from "@/components/staff/stat-strip";
 import { type MemberData, MemberRow } from "@/components/staff/teams/member-row";
-import { TeamForm } from "@/components/staff/teams/team-form";
+import { TeamEditButton } from "@/components/staff/teams/team-form";
 import { Numeral, Ordinal } from "@/components/ui/bib";
+import { ButtonLink } from "@/components/ui/button";
 import { ControlMarker } from "@/components/ui/control";
 import { CopyButton } from "@/components/ui/copy-button";
 import { RelativeTime } from "@/components/ui/countdown";
@@ -17,17 +19,30 @@ import { requireStaff, roleAtLeast } from "@/lib/auth/access";
 import { formatPoints, formatSigned, plural } from "@/lib/format";
 import { formatCode } from "@/lib/ids";
 import { getStandings, rankedCount, standingFor } from "@/lib/scoring/service";
+import { earningSubmissions } from "@/lib/staff/earning";
 import { hasScored } from "@/lib/staff/format";
+import { isArchived } from "@/lib/staff/guards";
+import { staffTitle } from "@/lib/staff/metadata";
 import { getTeam, listTeams, teamAdjustments, teamMembers, teamSubmissions } from "@/lib/staff/queries";
 import { deleteTeamAction, regenerateTeamCodeAction } from "@/lib/staff/team-actions";
 import { absoluteUrl, links } from "@/lib/url";
 
-export const metadata: Metadata = { title: "Team" };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ huntId: string; teamId: string }>;
+}): Promise<Metadata> {
+  const { huntId, teamId } = await params;
+  return staffTitle(huntId, "Team", { page: async (hunt) => (await getTeam(hunt.id, teamId))?.name });
+}
 
 export default async function TeamPage({ params }: { params: Promise<{ huntId: string; teamId: string }> }) {
   const { huntId, teamId } = await params;
   const { hunt, role } = await requireStaff(huntId, "judge");
   const organizer = roleAtLeast(role, "organizer");
+  // Archived hunts are read-only: the team shows as it finished.
+  const archived = isArchived(hunt);
+  const canEdit = organizer && !archived;
   const team = await getTeam(hunt.id, teamId);
   if (!team) notFound();
 
@@ -42,14 +57,10 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
   const standing = standingFor(standings, team.id);
   const now = Date.now();
   const awards = standings.awards[team.id] ?? {};
-  // Points show on the submission that earned them: each task's earliest accepted one.
-  const earning = new Set<string>();
-  const seenTask = new Set<string>();
-  for (const s of [...subs].reverse()) {
-    if (s.status !== "approved" || seenTask.has(s.taskId)) continue;
-    seenTask.add(s.taskId);
-    earning.add(s.id);
-  }
+  // Points show on the submission that earned them: the solve, or the contest entry that placed.
+  const earning = earningSubmissions(subs, (taskId) =>
+    standings.tasks[taskId]?.contest?.find((e) => e.teamId === team.id),
+  );
   const otherTeams = allTeams.filter((t) => t.id !== team.id).map((t) => ({ id: t.id, name: t.name }));
   const memberData: MemberData[] = members.map((m) => ({
     id: m.id,
@@ -84,6 +95,14 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
                 </span>
               ) : null}
             </p>
+            {canEdit ? (
+              <div className="mt-3">
+                <TeamEditButton
+                  huntId={hunt.id}
+                  team={{ id: team.id, name: team.name, emoji: team.emoji, color: team.color, hidden: team.hidden }}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
         {standing ? (
@@ -96,11 +115,13 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
             ) : null}
             <p className="flex flex-col">
               <Numeral className="text-6xl leading-none">{formatPoints(standing.total)}</Numeral>
-              <span className="mt-1 text-sm text-ink-2">points, live</span>
+              <span className="mt-1 text-sm text-ink-2">{archived ? "points" : "points, live"}</span>
             </p>
           </div>
         ) : null}
       </header>
+
+      {archived && organizer ? <ArchivedNotice huntId={hunt.id} /> : null}
 
       {standing ? (
         <StatStrip label="Where the points come from">
@@ -119,7 +140,9 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
             </h2>
             {memberData.length === 0 ? (
               <p className="rounded-lg border border-dashed border-line-strong px-4 py-6 text-center text-sm text-ink-2">
-                Nobody has joined yet. Share the team code or print the team card.
+                {archived
+                  ? "Nobody joined this team."
+                  : "Nobody has joined yet. Share the team code or print the team card."}
               </p>
             ) : (
               <ul className="divide-y divide-line rounded-lg border border-line">
@@ -129,7 +152,7 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
                     huntId={hunt.id}
                     member={m}
                     otherTeams={otherTeams}
-                    editable={organizer}
+                    editable={canEdit}
                     serverNow={now}
                   />
                 ))}
@@ -143,12 +166,12 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
             </h2>
             {subs.length === 0 ? (
               <p className="rounded-lg border border-dashed border-line-strong px-4 py-6 text-center text-sm text-ink-2">
-                Nothing submitted yet.
+                {archived ? "The team didn’t submit anything." : "Nothing submitted yet."}
               </p>
             ) : (
               <ul className="divide-y divide-line rounded-lg border border-line">
                 {subs.map((s) => {
-                  const points = earning.has(s.id) ? awards[s.taskId] : undefined;
+                  const points = earning.get(s.taskId) === s.id ? awards[s.taskId] : undefined;
                   return (
                     <li key={s.id}>
                       <Link
@@ -184,9 +207,17 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
           </section>
 
           <section aria-labelledby="adj-heading" className="flex flex-col gap-3">
-            <h2 id="adj-heading" className="font-cond text-2xl font-bold">
-              Score adjustments
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <h2 id="adj-heading" className="font-cond text-2xl font-bold">
+                Score adjustments
+              </h2>
+              {canEdit ? (
+                <ButtonLink href={`/manage/${hunt.id}/scoreboard?adjust=${team.id}#adjust`} variant="quiet" size="sm">
+                  <Diff aria-hidden />
+                  Adjust score
+                </ButtonLink>
+              ) : null}
+            </div>
             {adjustments.length === 0 ? (
               <p className="text-sm text-ink-2">No bonuses or penalties so far.</p>
             ) : (
@@ -228,7 +259,7 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
                 Print card
               </Link>
             </div>
-            {organizer ? (
+            {canEdit ? (
               <div className="mt-4 border-t border-line pt-4">
                 <ConfirmAction
                   action={regenerateTeamCodeAction}
@@ -246,19 +277,7 @@ export default async function TeamPage({ params }: { params: Promise<{ huntId: s
             ) : null}
           </section>
 
-          {organizer ? (
-            <section aria-labelledby="details-heading" className="flex flex-col gap-4">
-              <h2 id="details-heading" className="font-cond text-2xl font-bold">
-                Team details
-              </h2>
-              <TeamForm
-                huntId={hunt.id}
-                team={{ id: team.id, name: team.name, emoji: team.emoji, color: team.color, hidden: team.hidden }}
-              />
-            </section>
-          ) : null}
-
-          {organizer ? (
+          {canEdit ? (
             <section aria-labelledby="delete-heading" className="rounded-lg border border-danger/40 p-5">
               <h2 id="delete-heading" className="font-cond text-xl font-bold">
                 Delete team

@@ -1,5 +1,5 @@
 import type { ContestRank, SubmissionStatus, TaskKind } from "@/lib/db/schema";
-import type { TaskScoringContext } from "./what-if";
+import type { CompactScoring } from "./what-if";
 
 /*
  * Serializable shapes the judging screens pass from the server to client
@@ -23,11 +23,11 @@ export type MediaFile = {
   download: string;
 };
 
+/** A task as judging screens need it. The description is rendered on the server (it's Markdown). */
 export type JudgeTask = {
   id: string;
   code: number;
   title: string;
-  description: string;
   kind: TaskKind;
   /** "Photo", "Video", "Answer", "Contest" … */
   kindLabel: string;
@@ -115,21 +115,51 @@ export type JudgeResult =
       stale?: boolean;
       /** Which input to point at. */
       field?: "contestValue" | "pointsOverride" | "feedback";
+      /** The caller isn't on the hunt's staff anymore (removed, signed out, or the hunt is gone). */
+      lostAccess?: boolean;
     };
 
 export type ClaimResult =
   | { ok: true; claimed: true }
   | { ok: true; claimed: false; judged: true }
   | { ok: true; claimed: false; judged: false; by: Claim }
-  | { ok: false; error: string };
+  | { ok: false; error: string; lostAccess?: boolean };
 
-/** Everything the judging queue renders, loaded by lib/judging/queue.ts. */
+/** Filters and page size the judging queue was loaded with (from the URL). */
+export type QueueQuery = {
+  task: string | null;
+  team: string | null;
+  kind: TaskKind | null;
+  /** How many of the oldest matching submissions to load. */
+  limit: number;
+};
+
+/** Waiting submissions in the whole queue, whatever is loaded. */
+export type QueueCounts = {
+  total: number;
+  /** When the oldest waiting submission was sent. */
+  oldestAt: number | null;
+  byTask: Record<string, number>;
+  byTeam: Record<string, number>;
+  byKind: Partial<Record<TaskKind, number>>;
+  /** Waiting submissions that match the query's filters. */
+  matching: number;
+};
+
+/**
+ * What the judging queue renders, loaded by lib/judging/queue.ts. It's sent
+ * again on every refresh, so it holds one page of the queue rather than all of it.
+ */
 export type JudgeQueueData = {
-  /** Pending submissions, oldest first. */
+  /** The oldest `query.limit` waiting submissions matching the filters (plus the one open in the URL), oldest first. */
   items: QueueItem[];
+  counts: QueueCounts;
+  query: QueueQuery;
+  /** The submission the URL asked for (it's in `items` if it's still waiting). */
+  openId: string | null;
   tasks: Record<string, JudgeTask>;
   teams: Record<string, JudgeTeam>;
-  /** Per task with pending submissions: what approving would be worth. */
-  scoring: Record<string, TaskScoringContext>;
+  /** Per task with a loaded submission: what approving would be worth. */
+  scoring: Record<string, CompactScoring>;
   recent: RecentDecision[];
 };

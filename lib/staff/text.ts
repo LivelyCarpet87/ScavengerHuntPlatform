@@ -77,19 +77,69 @@ export function parseLines(text: string): string[] {
   return out;
 }
 
-/**
- * Markdown to a short plain-text line, for push notifications and previews:
- * drops formatting marks, keeps link text, collapses whitespace.
- */
-export function plainText(markdown: string, max = 180): string {
-  const text = markdown
+/** A line that starts a block of its own: a heading or a list item. */
+const BLOCK_START = /^\s{0,3}(#{1,6}|[-*+]|\d+[.)])\s+/;
+/** Already ends like a sentence (closing quotes and brackets allowed after the mark). */
+const SENTENCE_END = /[.!?…:;,]["'”’)\]]*$/;
+
+/** Inline markdown to plain text: images dropped, link text kept, formatting marks removed. */
+function inlinePlain(text: string): string {
+  return text
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/`{1,3}([^`]*)`{1,3}/g, "$1")
-    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+[.)])\s+/gm, "")
     .replace(/(\*\*|__|\*|_|~~)(\S(?:.*?\S)?)\1/g, "$2")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * Markdown to a short plain-text line, for push notifications, toasts and
+ * previews: drops formatting marks and keeps link text. Headings, list items
+ * and paragraphs become sentences ("The finish moved. Bring your phones. Be
+ * there by 21:00"), so they don't run together; a list introduced by a colon
+ * reads as one ("Bring: a torch, water"), and lines wrapped inside a
+ * paragraph just join with a space.
+ */
+export function plainText(markdown: string, max = 180): string {
+  const blocks: { text: string; item: boolean }[] = [];
+  let current: string[] = [];
+  let item = false;
+  const flush = () => {
+    const text = inlinePlain(current.join(" "));
+    if (text) blocks.push({ text, item });
+    current = [];
+    item = false;
+  };
+  for (const line of markdown.split(/\r?\n/)) {
+    if (!line.trim()) {
+      flush();
+      continue;
+    }
+    const start = BLOCK_START.exec(line);
+    if (start) {
+      flush();
+      current.push(line.slice(start[0].length));
+      item = !start[1].startsWith("#");
+      // A heading is a block on its own; a list item may wrap onto the next lines.
+      if (!item) flush();
+      continue;
+    }
+    current.push(line.replace(/^\s{0,3}>\s?/, ""));
+  }
+  flush();
+
+  let text = "";
+  let listAfterColon = false;
+  blocks.forEach((block, i) => {
+    const prev = blocks[i - 1];
+    if (block.item && !prev?.item) listAfterColon = !!prev && prev.text.endsWith(":");
+    if (!prev) text = block.text;
+    else {
+      const sameList = block.item && prev.item && listAfterColon;
+      text += `${SENTENCE_END.test(text) ? " " : sameList ? ", " : ". "}${block.text}`;
+    }
+  });
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 

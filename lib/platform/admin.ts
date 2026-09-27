@@ -15,6 +15,8 @@ export type AdminUserRow = {
   name: string;
   email: string;
   isAdmin: boolean;
+  /** May create hunts (admins always can). */
+  canCreateHunts: boolean;
   createdAt: Date;
   /** Hunts where the account has an explicit staff role. */
   huntsStaffed: number;
@@ -30,6 +32,7 @@ export async function listUsersForAdmin(): Promise<AdminUserRow[]> {
         name: users.name,
         email: users.email,
         isAdmin: users.isAdmin,
+        canCreateHunts: users.canCreateHunts,
         createdAt: users.createdAt,
         huntsStaffed: count(huntStaff.huntId),
       })

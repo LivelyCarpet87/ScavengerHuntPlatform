@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
  * drawn in the hunt's accent from a single baseline. Short charts label every
  * bar (long ones just the ends), the sentence underneath says it in words,
  * hovering a bar shows its value, and "Show every value" opens the table.
+ * Long curves arrive `sampled` (evenly spaced solves, each with its real
+ * label), and then the table offers "the values" rather than every one.
  */
 export function ScoringPreview({
   title,
@@ -15,6 +17,7 @@ export function ScoringPreview({
   labels,
   summary,
   columnLabel,
+  sampled = false,
 }: {
   title: string;
   values: number[];
@@ -23,6 +26,8 @@ export function ScoringPreview({
   /** The whole curve in one sentence (the accessible version of the chart). */
   summary: string;
   columnLabel: string;
+  /** The bars are a sample of a longer curve. */
+  sampled?: boolean;
 }) {
   const max = Math.max(1, ...values);
   // Few bars: label each one and draw them wider. Many: label the ends only.
@@ -68,7 +73,9 @@ export function ScoringPreview({
       </div>
       <p className="mt-3 text-sm text-ink">{summary}</p>
       <details className="mt-2 text-sm">
-        <summary className="cursor-pointer py-1 font-semibold text-ink-2 hover:text-ink">Show every value</summary>
+        <summary className="cursor-pointer py-1 font-semibold text-ink-2 hover:text-ink">
+          {sampled ? "Show the values" : "Show every value"}
+        </summary>
         <table className="mt-1 w-full max-w-xs">
           <thead>
             <tr className="border-b border-line text-left text-ink-2">

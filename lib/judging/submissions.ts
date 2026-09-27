@@ -190,6 +190,8 @@ export type SubmissionDetail = {
   playerName: string | null;
   files: MediaFile[];
   task: JudgeTask;
+  /** The task's description (Markdown). */
+  description: string;
   team: JudgeTeam;
   teams: Record<string, JudgeTeam>;
   history: HistoryEntry[];
@@ -270,6 +272,7 @@ export async function loadSubmissionDetail(
     playerName: row.playerName,
     files: (fileMap[sub.id] ?? []).map(toMediaFile),
     task: toJudgeTask(task),
+    description: task.description,
     team,
     teams: Object.fromEntries(teamRows.map((t) => [t.id, t])),
     history: (history.get(`${team.id}:${task.id}`) ?? []).filter((h) => h.id !== sub.id),

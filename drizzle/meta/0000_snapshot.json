@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "190358d3-308a-4b8a-9a36-237edd61b456",
+  "id": "ccd4f060-7a1e-4875-b11e-74aaf6102429",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "adjustments": {
@@ -280,6 +280,15 @@
           "columns": [
             "hunt_id",
             "created_at"
+          ],
+          "isUnique": false
+        },
+        "audit_target_idx": {
+          "name": "audit_target_idx",
+          "columns": [
+            "hunt_id",
+            "target_kind",
+            "target_id"
           ],
           "isUnique": false
         }
@@ -1162,6 +1171,13 @@
             "session_id"
           ],
           "isUnique": true
+        },
+        "players_session_idx": {
+          "name": "players_session_idx",
+          "columns": [
+            "session_id"
+          ],
+          "isUnique": false
         }
       },
       "foreignKeys": {
@@ -1562,6 +1578,14 @@
           "columns": [
             "hunt_id",
             "status",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "submissions_hunt_created_idx": {
+          "name": "submissions_hunt_created_idx",
+          "columns": [
+            "hunt_id",
             "created_at"
           ],
           "isUnique": false
@@ -2079,6 +2103,14 @@
         },
         "is_admin": {
           "name": "is_admin",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "can_create_hunts": {
+          "name": "can_create_hunts",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

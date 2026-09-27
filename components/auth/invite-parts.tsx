@@ -6,6 +6,7 @@ import type { Hunt } from "@/lib/db/schema";
 import { formatDateTime } from "@/lib/format";
 import { signOutAndReturnAction } from "@/lib/platform/auth-actions";
 import { cn } from "@/lib/utils";
+import { SignOutForm } from "./sign-out-form";
 
 /** The hunt an invite is for: its terrain, name, phase and schedule. */
 export function InviteHuntCard({
@@ -61,15 +62,14 @@ export function SignedInAs({
         Signed in as <span className="font-semibold text-ink">{user.name}</span> ({user.email}).
       </span>
       {children}
-      <form action={signOutAndReturnAction}>
-        <input type="hidden" name="next" value={returnTo} />
+      <SignOutForm action={signOutAndReturnAction} next={returnTo}>
         <button
           type="submit"
           className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-line-strong underline-offset-4 hover:decoration-ink"
         >
           Not you? Sign out
         </button>
-      </form>
+      </SignOutForm>
     </div>
   );
 }

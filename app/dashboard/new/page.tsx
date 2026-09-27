@@ -6,7 +6,7 @@ import { AccountMenu } from "@/components/staff/account-menu";
 import { HuntMap } from "@/components/staff/hunt-map";
 import { NewHuntForm } from "@/components/staff/new-hunt-form";
 import { ContourArt } from "@/components/ui/contour-art";
-import { requireUser } from "@/lib/auth/access";
+import { CANNOT_CREATE_HUNTS, canCreateHunts, requireUser } from "@/lib/auth/access";
 import type { Accent } from "@/lib/db/schema";
 import { newId } from "@/lib/ids";
 import { templateSummaries } from "@/lib/templates";
@@ -19,6 +19,28 @@ const KIND_WORDS = { media: "photo", answer: "answer", checkpoint: "checkpoint",
 
 export default async function NewHuntPage({ searchParams }: { searchParams: Promise<{ template?: string }> }) {
   const user = await requireUser("/dashboard/new");
+  if (!canCreateHunts(user)) {
+    return (
+      <>
+        <SiteHeader>
+          <AccountMenu name={user.name} email={user.email} isAdmin={user.isAdmin} />
+        </SiteHeader>
+        <main id="main" tabIndex={-1} className="mx-auto max-w-xl px-4 pt-6 pb-16 outline-none">
+          <Link
+            href="/dashboard"
+            className="inline-flex h-11 items-center gap-2 text-sm font-semibold text-ink-2 hover:text-ink"
+          >
+            <ArrowLeft aria-hidden className="size-4" />
+            Your hunts
+          </Link>
+          <h1 className="mt-4 font-cond text-4xl font-extrabold tracking-tight">
+            Creating hunts needs organizer access
+          </h1>
+          <p className="mt-3 text-ink-2">{CANNOT_CREATE_HUNTS}</p>
+        </main>
+      </>
+    );
+  }
   const sp = await searchParams;
   const huntId = newId();
   const origin = new URL(await baseUrl()).host;
@@ -72,7 +94,7 @@ export default async function NewHuntPage({ searchParams }: { searchParams: Prom
       <SiteHeader>
         <AccountMenu name={user.name} email={user.email} isAdmin={user.isAdmin} />
       </SiteHeader>
-      <main className="mx-auto max-w-6xl px-4 pt-6 pb-10 md:pb-16">
+      <main id="main" tabIndex={-1} className="mx-auto max-w-6xl px-4 pt-6 pb-10 md:pb-16 outline-none">
         <Link
           href="/dashboard"
           className="inline-flex h-11 items-center gap-2 text-sm font-semibold text-ink-2 hover:text-ink"

@@ -81,6 +81,38 @@ export async function setAdminAction(_prev: ActionState, formData: FormData): Pr
   );
 }
 
+// Hunt creation --------------------------------------------------------------------
+
+const CreatorSchema = z.object({ userId, creator: z.enum(["grant", "revoke"]) });
+
+/** Lets an account create its own hunts (organizer access), or takes that away. */
+export async function setCreatorAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const me = await requireAdmin();
+  const parsed = parseForm(CreatorSchema, formData);
+  if (!parsed.ok) return parsed.state;
+  const grant = parsed.data.creator === "grant";
+  const target = await db.select().from(users).where(eq(users.id, parsed.data.userId)).get();
+  if (!target) return fail("That account no longer exists.");
+  if (target.isAdmin) return fail("Platform admins can always create hunts.");
+  if (target.canCreateHunts !== grant) {
+    await db.update(users).set({ canCreateHunts: grant }).where(eq(users.id, target.id));
+    await audit({
+      huntId: null,
+      actorUserId: me.id,
+      action: grant ? "user.creator_grant" : "user.creator_revoke",
+      targetKind: "user",
+      targetId: target.id,
+      data: { email: target.email },
+    });
+  }
+  refresh();
+  return ok(
+    grant
+      ? `${firstName(target.name)} can now create hunts.`
+      : `${firstName(target.name)} can no longer create hunts. Hunts they already run stay theirs.`,
+  );
+}
+
 // Passwords ------------------------------------------------------------------------
 
 const PasswordSchema = z.object({ userId, password: newPasswordField });

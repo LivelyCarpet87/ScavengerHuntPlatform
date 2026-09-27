@@ -13,7 +13,11 @@ export function SiteHeader({ children, className }: { children?: ReactNode; clas
           <LogoMark size={26} />
           <span className="font-cond text-xl font-extrabold tracking-tight">{env.appName}</span>
         </Link>
-        <nav className="ml-auto flex items-center gap-1">{children}</nav>
+        {children ? (
+          <nav aria-label="Account" className="ml-auto flex items-center gap-1">
+            {children}
+          </nav>
+        ) : null}
       </div>
     </header>
   );

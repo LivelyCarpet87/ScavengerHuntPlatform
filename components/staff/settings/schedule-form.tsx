@@ -10,15 +10,18 @@ import { updateScheduleAction } from "@/lib/staff/hunt-actions";
 import { useActionForm } from "../use-action-form";
 
 /**
- * Start, end and scoreboard freeze, entered in the organizer's local time,
- * plus the time zone the hunt prints its times in (posters, notifications).
+ * Start, end and scoreboard freeze, entered in the hunt's time zone (the one
+ * picked below), plus that zone, which also prints times (posters, notifications).
+ * `readOnly` (archived hunts) shows the schedule switched off.
  */
 export function ScheduleForm({
   huntId,
   values,
+  readOnly = false,
 }: {
   huntId: string;
   values: { startsAt: string | null; endsAt: string | null; freezeAt: string | null; timezone: string };
+  readOnly?: boolean;
 }) {
   const ids = useId();
   const { state, pending, onSubmit, formRef } = useActionForm(updateScheduleAction);
@@ -35,64 +38,75 @@ export function ScheduleForm({
   const pretty = (z: string) => z.replace(/_/g, " ");
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} className="flex flex-col gap-5">
+    <form ref={formRef} onSubmit={readOnly ? (e) => e.preventDefault() : onSubmit} className="flex flex-col gap-5">
       <input type="hidden" name="huntId" value={huntId} />
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <fieldset disabled={readOnly} className="contents [&_input:disabled]:opacity-50">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <DateTimeField
+            name="startsAt"
+            timeZone={zone}
+            label="Starts"
+            hint="Tasks appear to players at this moment."
+            defaultValue={values.startsAt}
+            error={fieldError(state, "startsAt")}
+          />
+          <DateTimeField
+            name="endsAt"
+            timeZone={zone}
+            label="Ends"
+            hint="Submissions close; final results show."
+            defaultValue={values.endsAt}
+            error={fieldError(state, "endsAt")}
+          />
+        </div>
         <DateTimeField
-          name="startsAt"
-          label="Starts"
-          hint="Tasks appear to players at this moment."
-          defaultValue={values.startsAt}
-          error={fieldError(state, "startsAt")}
+          name="freezeAt"
+          timeZone={zone}
+          label="Freeze the scoreboard at"
+          hint="Optional. From this moment players and the big screen see the standings as they were, while you keep seeing live scores. The final result is revealed when the hunt ends."
+          defaultValue={values.freezeAt}
+          error={fieldError(state, "freezeAt")}
+          className="sm:max-w-[calc(50%-0.625rem)]"
         />
-        <DateTimeField
-          name="endsAt"
-          label="Ends"
-          hint="Submissions close; final results show."
-          defaultValue={values.endsAt}
-          error={fieldError(state, "endsAt")}
-        />
-      </div>
-      <DateTimeField
-        name="freezeAt"
-        label="Freeze the scoreboard at"
-        hint="Optional. From this moment players and the big screen see the standings as they were, while you keep seeing live scores. The final result is revealed when the hunt ends."
-        defaultValue={values.freezeAt}
-        error={fieldError(state, "freezeAt")}
-        className="sm:max-w-[calc(50%-0.625rem)]"
-      />
-      <div className="flex flex-col gap-1.5 sm:max-w-[calc(50%-0.625rem)]">
-        <label htmlFor={`${ids}-zone`} className="text-sm font-semibold">
-          Hunt time zone
-        </label>
-        <p id={`${ids}-zone-hint`} className="-mt-1 text-sm text-ink-2">
-          Printed posters, notifications and the big screen show times in this zone.
-        </p>
-        <Select
-          id={`${ids}-zone`}
-          name="timezone"
-          value={zone}
-          onChange={(e) => setZone(e.target.value)}
-          aria-describedby={`${ids}-zone-hint`}
-          aria-invalid={zoneError ? true : undefined}
-        >
-          {zones.map((z) => (
-            <option key={z} value={z}>
-              {pretty(z)}
-            </option>
-          ))}
-        </Select>
-        {browserZone && browserZone !== zone && zones.includes(browserZone) ? (
-          <Button variant="quiet" size="sm" className="self-start" onClick={() => setZone(browserZone)}>
-            Use my time zone ({pretty(browserZone)})
+        <div className="flex flex-col gap-1.5 sm:max-w-[calc(50%-0.625rem)]">
+          <label htmlFor={`${ids}-zone`} className="text-sm font-semibold">
+            Hunt time zone
+          </label>
+          <p id={`${ids}-zone-hint`} className="-mt-1 text-sm text-ink-2">
+            Printed posters, notifications and the big screen show times in this zone.
+          </p>
+          <Select
+            id={`${ids}-zone`}
+            name="timezone"
+            value={zone}
+            onChange={(e) => setZone(e.target.value)}
+            aria-describedby={`${ids}-zone-hint`}
+            aria-invalid={zoneError ? true : undefined}
+          >
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {pretty(z)}
+              </option>
+            ))}
+          </Select>
+          {browserZone && browserZone !== zone && zones.includes(browserZone) ? (
+            <Button variant="quiet" size="sm" className="self-start" onClick={() => setZone(browserZone)}>
+              Use my time zone ({pretty(browserZone)})
+            </Button>
+          ) : null}
+          {zoneError ? <p className="text-sm font-medium text-danger">{zoneError}</p> : null}
+        </div>
+      </fieldset>
+      {readOnly ? (
+        <p className="text-sm text-ink-2">The hunt is archived. Restore it below to change its schedule.</p>
+      ) : (
+        <>
+          <FormMessage state={formLevel(state, ["startsAt", "endsAt", "freezeAt", "timezone"])} />
+          <Button type="submit" variant="secondary" pending={pending} className="self-start">
+            Save schedule
           </Button>
-        ) : null}
-        {zoneError ? <p className="text-sm font-medium text-danger">{zoneError}</p> : null}
-      </div>
-      <FormMessage state={formLevel(state, ["startsAt", "endsAt", "freezeAt", "timezone"])} />
-      <Button type="submit" variant="secondary" pending={pending} className="self-start">
-        Save schedule
-      </Button>
+        </>
+      )}
     </form>
   );
 }

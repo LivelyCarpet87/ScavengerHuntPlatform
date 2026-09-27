@@ -23,17 +23,22 @@ import { type HuntPhase, huntPhase } from "@/lib/hunts";
 import { getStandings } from "@/lib/scoring/service";
 import { setupSteps } from "@/lib/staff/checklist";
 import { formatSchedule, publishConsequence } from "@/lib/staff/format";
+import { staffTitle } from "@/lib/staff/metadata";
 import {
   activeInviteCount,
+  archivedAt,
+  checkpointKey,
   getHuntStats,
   type HuntStats,
-  hasPrinted,
+  printedCheckpointKeys,
   recentActivity,
   staffCount,
 } from "@/lib/staff/queries";
 import { absoluteUrl, baseUrl, links } from "@/lib/url";
 
-export const metadata: Metadata = { title: "Overview" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Overview");
+}
 
 export default async function OverviewPage({
   params,
@@ -49,17 +54,27 @@ export default async function OverviewPage({
   const now = new Date();
   const phase = huntPhase(hunt, now);
 
-  const [stats, activity, standings, staffN, inviteN, printed, codeRows, joinUrl, base] = await Promise.all([
-    getHuntStats(hunt.id),
-    recentActivity(hunt.id, 10),
-    getStandings(hunt.id),
-    staffCount(hunt.id),
-    activeInviteCount(hunt.id, now),
-    hasPrinted(hunt.id, "checkpoints"),
-    db.select({ code: tasks.code }).from(tasks).where(eq(tasks.huntId, hunt.id)).orderBy(asc(tasks.sortOrder)),
-    absoluteUrl(links.join(hunt.joinCode)),
-    baseUrl(),
-  ]);
+  const [stats, activity, standings, staffN, inviteN, printedKeys, codeRows, joinUrl, base, archivedOn] =
+    await Promise.all([
+      getHuntStats(hunt.id),
+      recentActivity(hunt.id, 10),
+      getStandings(hunt.id),
+      staffCount(hunt.id),
+      activeInviteCount(hunt.id, now),
+      printedCheckpointKeys(hunt.id),
+      db
+        .select({ id: tasks.id, code: tasks.code, checkpointCode: tasks.checkpointCode })
+        .from(tasks)
+        .where(eq(tasks.huntId, hunt.id))
+        .orderBy(asc(tasks.sortOrder)),
+      absoluteUrl(links.join(hunt.joinCode)),
+      baseUrl(),
+      phase === "archived" ? archivedAt(hunt.id) : null,
+    ]);
+  // Checkpoints whose poster has been printed with the code they have now.
+  const printed = codeRows.filter(
+    (t) => t.checkpointCode && printedKeys.has(checkpointKey(t.id, t.checkpointCode)),
+  ).length;
 
   const schedule = formatSchedule(hunt.startsAt, hunt.endsAt, hunt.timezone);
   const settingUp = phase === "draft" || phase === "upcoming";
@@ -124,7 +139,7 @@ export default async function OverviewPage({
             <p className="mt-1 text-xs text-ink-3">Times shown in {hunt.timezone.replace(/_/g, " ")}.</p>
           </div>
           <div className="flex flex-col items-start gap-4 sm:items-end">
-            <Clock hunt={hunt} phase={phase} now={now.getTime()} />
+            <Clock hunt={hunt} phase={phase} now={now.getTime()} archivedOn={archivedOn} />
             <PrimaryAction hunt={hunt} phase={phase} organizer={organizer} stats={stats} now={now} />
           </div>
         </div>
@@ -163,6 +178,7 @@ export default async function OverviewPage({
             joinUrl={joinUrl}
             host={new URL(base).host}
             isDraft={hunt.status === "draft"}
+            live={phase === "live"}
             className="self-start lg:sticky lg:top-6"
           />
         )}
@@ -171,7 +187,18 @@ export default async function OverviewPage({
   );
 }
 
-function Clock({ hunt, phase, now }: { hunt: Hunt; phase: HuntPhase; now: number }) {
+function Clock({
+  hunt,
+  phase,
+  now,
+  archivedOn,
+}: {
+  hunt: Hunt;
+  phase: HuntPhase;
+  now: number;
+  /** When an archived hunt was archived, if the activity log knows. */
+  archivedOn: Date | null;
+}) {
   const big = "text-5xl sm:text-6xl";
   if (phase === "live" && hunt.endsAt) {
     return (
@@ -196,7 +223,7 @@ function Clock({ hunt, phase, now }: { hunt: Hunt; phase: HuntPhase; now: number
     );
   }
   if (phase === "ended" || phase === "archived") {
-    // An archived hunt may have been filed away before its end time.
+    // An archived hunt may have been filed away before its end time, or never had one.
     const endedAt = hunt.endsAt && hunt.endsAt.getTime() <= now ? hunt.endsAt : null;
     if (!endedAt && phase === "ended") return null;
     return (
@@ -207,10 +234,12 @@ function Clock({ hunt, phase, now }: { hunt: Hunt; phase: HuntPhase; now: number
             <>
               Finished <span className="block font-semibold text-ink">{formatDateTime(endedAt, hunt.timezone)}</span>
             </>
-          ) : (
+          ) : archivedOn ? (
             <>
-              Archived <span className="block font-semibold text-ink">before its end time</span>
+              Archived <span className="block font-semibold text-ink">{formatDateTime(archivedOn, hunt.timezone)}</span>
             </>
+          ) : (
+            <span className="font-semibold text-ink">Archived</span>
           )}
         </p>
       </div>
@@ -295,7 +324,8 @@ function PhaseNotices({ hunt, phase, now, pending }: { hunt: Hunt; phase: HuntPh
   if (phase === "archived") {
     return (
       <Notice tone="info" icon={<Archive className="size-4" />} title="Archived">
-        Players can still see the results, but nothing more can be submitted. Restore it from Settings if you need to.
+        Players can still see the results. Nothing more can be submitted, and its tasks, teams and scores are read-only.
+        Restore it from Settings to change them.
       </Notice>
     );
   }

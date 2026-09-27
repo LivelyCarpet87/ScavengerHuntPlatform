@@ -1,4 +1,5 @@
 import { count, eq } from "drizzle-orm";
+import { Archive } from "lucide-react";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { ConfirmAction } from "@/components/staff/confirm-action";
@@ -12,18 +13,22 @@ import { ScheduleForm } from "@/components/staff/settings/schedule-form";
 import { type ActiveInvite, type StaffMember, StaffSection } from "@/components/staff/settings/staff-section";
 import { StatusSection } from "@/components/staff/settings/status-section";
 import { VisibilityForm } from "@/components/staff/settings/visibility-form";
-import { PageHeader } from "@/components/ui/misc";
+import { Notice, PageHeader } from "@/components/ui/misc";
 import { requireStaff } from "@/lib/auth/access";
 import { db } from "@/lib/db";
 import { adjustments, hintUnlocks } from "@/lib/db/schema";
 import { publishConsequence } from "@/lib/staff/format";
+import { isArchived } from "@/lib/staff/guards";
 import { regenerateJoinCodeAction } from "@/lib/staff/hunt-actions";
+import { staffTitle } from "@/lib/staff/metadata";
 import { getFile, getHuntStats, listActiveInvites, listStaff } from "@/lib/staff/queries";
 import { fileUrl } from "@/lib/storage";
 import { absoluteUrl, baseUrl } from "@/lib/url";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Settings" };
+export async function generateMetadata({ params }: { params: Promise<{ huntId: string }> }): Promise<Metadata> {
+  return staffTitle((await params).huntId, "Settings", { min: "organizer" });
+}
 
 const SECTIONS = [
   { id: "basics", label: "Basics" },
@@ -70,6 +75,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ huntI
   const { huntId } = await params;
   const { hunt, role, user } = await requireStaff(huntId, "organizer");
   const owner = role === "owner";
+  const archived = isArchived(hunt);
   const now = new Date();
 
   const [origin, cover, staff, invites, stats, reveals, adjustmentCount] = await Promise.all([
@@ -110,6 +116,15 @@ export default async function SettingsPage({ params }: { params: Promise<{ huntI
         description="Each section saves on its own. Players see changes straight away."
         className="mb-4"
       />
+      {archived ? (
+        <Notice tone="info" icon={<Archive className="size-4" />} title="This hunt is archived" className="mb-4">
+          Its tasks, teams, schedule and scores are read-only; its name, look, scoreboard and staff can still change.{" "}
+          <a href="#status" className="font-semibold text-ink underline">
+            Restore it
+          </a>{" "}
+          to change the rest.
+        </Notice>
+      ) : null}
       <nav aria-label="Settings sections" className="-mx-4 overflow-x-auto px-4 pb-4 [scrollbar-width:none]">
         <ul className="flex min-w-max gap-1.5">
           {SECTIONS.filter((s) => s.id !== "danger" || owner).map((s) => (
@@ -151,10 +166,11 @@ export default async function SettingsPage({ params }: { params: Promise<{ huntI
       <Section
         id="schedule"
         title="Schedule"
-        description="Enter times as they are where you are: your browser converts them. The hunt prints its times in its own time zone."
+        description="Times are in the hunt’s time zone (set below), wherever you are; when yours is different, each field shows your time too. Posters and notifications use the same zone."
       >
         <ScheduleForm
           huntId={hunt.id}
+          readOnly={archived}
           values={{
             startsAt: iso(hunt.startsAt),
             endsAt: iso(hunt.endsAt),
@@ -242,8 +258,8 @@ export default async function SettingsPage({ params }: { params: Promise<{ huntI
             <div>
               <p className="font-semibold">Run it again</p>
               <p className="text-sm text-ink-2">
-                Copies the settings, tasks, hints and attachments into a new draft. Teams, submissions and the schedule
-                aren’t copied.
+                Copies the settings, tasks, hints and attachments into a new draft, with registration open. Teams,
+                submissions and the schedule aren’t copied.
               </p>
             </div>
             <div>
@@ -269,6 +285,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ huntI
           <DangerZone
             huntId={hunt.id}
             huntName={hunt.name}
+            archived={archived}
             counts={{
               submissions: stats.pending + stats.approved + stats.rejected,
               hintReveals: reveals?.n ?? 0,

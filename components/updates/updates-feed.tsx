@@ -53,7 +53,8 @@ export function UpdatesFeed({ items, slug, now }: { items: FeedItem[]; slug: str
 function AnnouncementItem({ item, now }: { item: Extract<FeedItem, { kind: "announcement" }>; now: number }) {
   return (
     <>
-      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent-wash text-accent">
+      {/* Plain ink on mist: the overprint color stays for the course (control markers), "New" and actions. */}
+      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-mist text-ink-2">
         <Megaphone aria-hidden className="size-5" />
       </span>
       <div className="min-w-0 flex-1">
@@ -124,7 +125,7 @@ function ResultItem({ item, slug, now }: { item: Extract<FeedItem, { kind: "resu
           {!accepted && item.canRetry ? (
             <Link
               href={links.task(slug, item.task.id)}
-              className="text-sm font-semibold text-accent underline-offset-2 hover:underline"
+              className="text-sm font-semibold text-ink underline underline-offset-2 hover:text-ink-2"
             >
               Open the task to try again
             </Link>

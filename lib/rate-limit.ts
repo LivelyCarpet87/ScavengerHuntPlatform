@@ -1,5 +1,6 @@
 import "server-only";
 import { headers } from "next/headers";
+import { env } from "@/lib/env";
 
 /*
  * Fixed-window rate limiter kept in memory. Good enough for a single server;
@@ -41,8 +42,45 @@ export function peekRateLimit(key: string, limit: number): { ok: boolean; retryA
   return { ok: false, retryAfterSec: Math.ceil((bucket.resetAt - now) / 1000) };
 }
 
-/** Best-effort client IP (first X-Forwarded-For hop when behind a proxy). */
+/**
+ * The client address for rate limits, from X-Forwarded-For counted from the
+ * right: the last `hops` entries were written by proxies we run (1 = the
+ * reverse proxy in front of the app, set with TRUSTED_PROXY_HOPS), anything
+ * further left is whatever the client sent and could be made up. Without a
+ * proxy, Next.js fills the header with the socket's address.
+ */
 export async function clientIp(): Promise<string> {
-  const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "local";
+  return pickClientIp((await headers()).get("x-forwarded-for"), env.trustedProxyHops);
+}
+
+export function pickClientIp(xff: string | null, hops = 1): string {
+  const list = (xff ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const entry = list[Math.max(0, list.length - Math.max(1, hops))];
+  return entry ? rateKey(entry) : "unknown";
+}
+
+/**
+ * One bucket per IPv4 address, and per IPv6 /64 — the block a single phone
+ * or household gets, so hopping between its addresses doesn't reset limits.
+ */
+function rateKey(entry: string): string {
+  let ip = entry.toLowerCase();
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(ip);
+  if (bracketed) ip = bracketed[1];
+  else if (/^[\d.]+:\d+$/.test(ip)) ip = ip.slice(0, ip.lastIndexOf(":")); // IPv4 with a port
+  ip = ip.replace(/%.*$/, ""); // IPv6 zone
+  if (ip.startsWith("::ffff:") && ip.includes(".")) return ip.slice(7);
+  if (!ip.includes(":")) return ip;
+  const [head, tail] = ip.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = tail === undefined ? left : [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
+  if (groups.length !== 8 || !groups.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return ip;
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.replace(/^0+(?=.)/, ""))
+    .join(":")}::/64`;
 }

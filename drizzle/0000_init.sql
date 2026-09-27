@@ -40,6 +40,7 @@ CREATE TABLE `audit_log` (
 );
 --> statement-breakpoint
 CREATE INDEX `audit_hunt_idx` ON `audit_log` (`hunt_id`,`created_at`);--> statement-breakpoint
+CREATE INDEX `audit_target_idx` ON `audit_log` (`hunt_id`,`target_kind`,`target_id`);--> statement-breakpoint
 CREATE TABLE `files` (
 	`id` text PRIMARY KEY NOT NULL,
 	`hunt_id` text,
@@ -161,6 +162,7 @@ CREATE TABLE `players` (
 --> statement-breakpoint
 CREATE INDEX `players_team_idx` ON `players` (`team_id`);--> statement-breakpoint
 CREATE UNIQUE INDEX `players_hunt_session_uq` ON `players` (`hunt_id`,`session_id`);--> statement-breakpoint
+CREATE INDEX `players_session_idx` ON `players` (`session_id`);--> statement-breakpoint
 CREATE TABLE `push_subscriptions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`endpoint` text NOT NULL,
@@ -222,6 +224,7 @@ CREATE TABLE `submissions` (
 );
 --> statement-breakpoint
 CREATE INDEX `submissions_queue_idx` ON `submissions` (`hunt_id`,`status`,`created_at`);--> statement-breakpoint
+CREATE INDEX `submissions_hunt_created_idx` ON `submissions` (`hunt_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `submissions_team_task_idx` ON `submissions` (`team_id`,`task_id`);--> statement-breakpoint
 CREATE INDEX `submissions_task_idx` ON `submissions` (`task_id`,`status`);--> statement-breakpoint
 CREATE UNIQUE INDEX `submissions_team_client_uq` ON `submissions` (`team_id`,`client_id`);--> statement-breakpoint
@@ -282,6 +285,7 @@ CREATE TABLE `users` (
 	`name` text NOT NULL,
 	`password_hash` text NOT NULL,
 	`is_admin` integer DEFAULT false NOT NULL,
+	`can_create_hunts` integer DEFAULT false NOT NULL,
 	`created_at` integer NOT NULL
 );
 --> statement-breakpoint

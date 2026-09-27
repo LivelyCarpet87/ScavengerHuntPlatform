@@ -3,32 +3,42 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Ordinal } from "@/components/ui/bib";
+import { EmptyState } from "@/components/ui/empty-state";
 import { TeamAvatar } from "@/components/ui/team-badge";
 import { formatPoints, formatTime } from "@/lib/format";
 import { describeProgress, isBoardEmpty, isTied, type StandingRow } from "@/lib/live/types";
 import { cn } from "@/lib/utils";
 import { Podium, type PodiumEntry, TieTag, YouTag } from "./podium";
 import { Movement, useRankMovement } from "./rank-movement";
+import { useLiveStandings } from "./use-live-standings";
 
 /**
  * The player scoreboard: the top three on finish-line bibs, then everyone
  * else in ranked rows. The viewer's team is highlighted; when its row is off
  * screen a bar above the tab bar keeps "You: 5th, 640" in view. Arrows show
- * places gained or lost since this device last looked.
+ * places gained or lost since this device last looked. Scores update live
+ * (see useLiveStandings).
  */
 export function ScoreboardBoard({
   huntId,
   timezone,
-  rows,
+  rows: serverRows,
+  updatedAt,
   viewerTeamId,
+  live = false,
 }: {
   huntId: string;
   timezone: string;
   /** Visible teams in rank order, then (staff only) hidden teams. */
   rows: StandingRow[];
+  /** When `rows` were computed (StandingsPayload.updatedAt). */
+  updatedAt: string;
   viewerTeamId: string | null;
+  /** The hunt is on: phones get the compact podium. */
+  live?: boolean;
 }) {
-  // Stable per server render, so the movement snapshot is only saved when the standings change.
+  const rows = useLiveStandings(huntId, serverRows, updatedAt);
+  // Stable per set of standings, so the movement snapshot is only saved when they change.
   const ranked = useMemo(() => rows.filter((r) => !r.hidden), [rows]);
   const hidden = rows.filter((r) => r.hidden);
   const empty = isBoardEmpty(ranked);
@@ -47,6 +57,11 @@ export function ScoreboardBoard({
   const you = ranked.find((r) => r.teamId === viewerTeamId) ?? null;
   const anyMoves = Object.keys(moves).length > 0;
 
+  if (rows.length === 0) {
+    // Visitors already have "Join this hunt" in the header (desktop) or the bar at the bottom (phones).
+    return <EmptyState title="No teams yet">Teams show up here as soon as they register.</EmptyState>;
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {empty ? (
@@ -55,7 +70,7 @@ export function ScoreboardBoard({
         </p>
       ) : null}
 
-      {podium.length > 0 ? <Podium entries={podium} youRef={setYouEl} /> : null}
+      {podium.length > 0 ? <Podium entries={podium} youRef={setYouEl} compact={live} /> : null}
 
       {rest.length > 0 ? (
         <section aria-label={podium.length > 0 ? "Everyone else" : "Teams"}>

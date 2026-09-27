@@ -48,7 +48,7 @@ export async function sendQueuedNow(): Promise<void> {
     await flushQueue();
   } catch {
     toast({
-      title: "Couldn't reach the saved uploads",
+      title: "Couldn’t reach the saved uploads",
       description: "This browser blocked its storage. Reload the page and try again.",
       tone: "danger",
     });
@@ -60,7 +60,7 @@ export async function discardQueued(clientId: string): Promise<void> {
   try {
     await removeQueued(clientId);
   } catch {
-    toast({ title: "Couldn't remove that upload", description: "Reload the page and try again.", tone: "danger" });
+    toast({ title: "Couldn’t remove that upload", description: "Reload the page and try again.", tone: "danger" });
   }
 }
 
@@ -138,13 +138,14 @@ export function QueuedUploadList({ items, className }: { items: QueuedSubmission
               {item.state === "failed" ? <TriangleAlert aria-hidden className="mt-0.5 size-3.5 shrink-0" /> : null}
               {item.state === "sending" ? <Spinner className="mt-0.5 size-3.5 shrink-0" /> : null}
               <span>
-                {item.state === "failed" ? "Couldn't send: " : null}
+                {item.state === "failed" ? "Couldn’t send: " : null}
                 {statusLine(item, now)}
               </span>
             </p>
           </div>
           <div className="-mr-2 flex shrink-0 items-center">
-            {item.state === "failed" ? (
+            {/* Sending it again can't help when it was made for a team this phone has left. */}
+            {item.state === "failed" && item.errorCode !== "team_changed" ? (
               <Button
                 size="icon"
                 variant="ghost"

@@ -1,8 +1,11 @@
 import { CalendarClock, FilePenLine, Hourglass, Snowflake } from "lucide-react";
+import Link from "next/link";
+import { RememberTeam } from "@/components/join/device-team";
 import { LiveRefresh } from "@/components/live/live-refresh";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { InviteCard } from "@/components/team/invite-card";
 import { Roster } from "@/components/team/member-identity";
+import { TeamInviteSection } from "@/components/team/team-invite";
 import { Ordinal } from "@/components/ui/bib";
 import { ButtonLink } from "@/components/ui/button";
 import { FinishMark, StartMark } from "@/components/ui/control";
@@ -30,8 +33,10 @@ import { WelcomeBlock } from "./welcome";
 const DAY = 86_400_000;
 
 /**
- * /h/[slug] for a team member: the team's bib, where the hunt stands, the
- * control card and every task, kept live as judges decide and tasks unlock.
+ * /h/[slug] for a team member: the team's bib, where the hunt stands, every
+ * task (what's left to do first) and the control card, kept live as judges
+ * decide and tasks unlock. On phones the time left sits in the header, so the
+ * first tasks show without scrolling.
  */
 export async function HuntHome({
   hunt,
@@ -114,10 +119,12 @@ export async function HuntHome({
 
   const createdTeam =
     me.player.isCaptain && Math.abs(me.team.createdAt.getTime() - me.player.createdAt.getTime()) < 60_000;
+  const teamFull = hunt.maxTeamSize != null && members.length >= hunt.maxTeamSize;
   const updatesHref = `/h/${hunt.slug}/updates`;
+  const teamHref = `/h/${hunt.slug}/team`;
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6 sm:gap-8">
       {/* submission.created only reaches this team: a teammate's proof shows up as "In review" right away. */}
       <LiveRefresh
         huntId={hunt.id}
@@ -132,10 +139,38 @@ export async function HuntHome({
           huntTasks.later.nextAt?.getTime(),
         ]}
       />
+      <RememberTeam huntId={hunt.id} teamName={me.team.name} playerName={me.player.name} />
 
-      {welcome ? (
-        <WelcomeBlock teamName={me.team.name} created={createdTeam}>
+      {/* Whoever started the team gets the invite; someone who just joined it gets on with the hunt. */}
+      {welcome && createdTeam && !teamFull ? (
+        <WelcomeBlock
+          title="Get your team on board"
+          lead={`${me.team.name} is registered. Share the code so your teammates can join from their own phones.`}
+          closeLabel="Hide the invite"
+        >
           <InviteCard hunt={hunt} team={me.team} />
+          <InstallPrompt />
+        </WelcomeBlock>
+      ) : welcome ? (
+        <WelcomeBlock
+          title={`You’re in ${me.team.name}`}
+          lead={
+            teamFull ? (
+              `Playing as ${me.player.name}.`
+            ) : started ? (
+              <>
+                Playing as {me.player.name}. Anyone still missing can join with the team code on the{" "}
+                <Link href={teamHref} className="font-semibold text-ink underline underline-offset-2">
+                  Team tab
+                </Link>
+                .
+              </>
+            ) : (
+              `Playing as ${me.player.name}. Anyone still missing can join with the team code below.`
+            )
+          }
+          closeLabel="Hide this message"
+        >
           <InstallPrompt />
         </WelcomeBlock>
       ) : null}
@@ -182,18 +217,6 @@ export async function HuntHome({
       {board ? (
         board.rows.length > 0 ? (
           <>
-            <section aria-labelledby="card-heading">
-              <div className="flex items-baseline justify-between gap-4">
-                <h2 id="card-heading" className="font-cond text-2xl font-bold tracking-tight">
-                  Control card
-                </h2>
-                <p className="text-sm text-ink-2">
-                  <span className="font-bib text-lg text-ink">{board.done}</span> of {board.rows.length} punched
-                </p>
-              </div>
-              <ControlCard cells={board.cells} className="mt-3" />
-            </section>
-
             <section aria-labelledby="tasks-heading" className="flex flex-col gap-3">
               <h2 id="tasks-heading" className="font-cond text-2xl font-bold tracking-tight">
                 Tasks
@@ -210,6 +233,19 @@ export async function HuntHome({
                   </span>
                 </p>
               ) : null}
+            </section>
+
+            {/* The team's record: a punch for every accepted task. Opening tasks happens in the list above. */}
+            <section aria-labelledby="card-heading">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 id="card-heading" className="font-cond text-2xl font-bold tracking-tight">
+                  Control card
+                </h2>
+                <p className="text-sm text-ink-2">
+                  <span className="font-bib text-lg text-ink">{board.done}</span> of {board.rows.length} punched
+                </p>
+              </div>
+              <ControlCard cells={board.cells} className="mt-3" />
             </section>
           </>
         ) : (
@@ -229,13 +265,23 @@ export async function HuntHome({
             </h2>
             <Roster members={members} meId={me.player.id} className="mt-2" />
           </section>
-          {welcome ? null : (
-            <section aria-labelledby="invite-heading" className="flex flex-col gap-3">
-              <h2 id="invite-heading" className="font-cond text-2xl font-bold tracking-tight">
-                Invite teammates
-              </h2>
-              <InviteCard hunt={hunt} team={me.team} />
-            </section>
+          {welcome && createdTeam && !teamFull ? null : (
+            <TeamInviteSection
+              hunt={hunt}
+              team={me.team}
+              members={members}
+              makeRoom={
+                me.player.isCaptain ? (
+                  <>
+                    To make room, remove a member on the{" "}
+                    <Link href={teamHref} className="font-semibold text-ink underline underline-offset-2">
+                      Team tab
+                    </Link>
+                    .
+                  </>
+                ) : null
+              }
+            />
           )}
         </>
       )}
@@ -287,9 +333,13 @@ function StartPanel({ hunt, now }: { hunt: Pick<Hunt, "startsAt" | "timezone">; 
   );
 }
 
-/** During the hunt: the finish time and the time left (a slim bar on phones). */
+/**
+ * During the hunt: the finish time and the time left. From md up only — on
+ * phones the header clock shows the time left, which keeps the tasks higher.
+ */
 function FinishPanel({ hunt, now }: { hunt: Pick<Hunt, "startsAt" | "endsAt" | "timezone">; now: number }) {
   if (!hunt.endsAt) {
+    // No clock in the header without a finish time, so this one shows on phones too.
     return (
       <section aria-label="Hunt status" className={panel}>
         <LiveDot label="Live now" className="text-sm" />
@@ -300,14 +350,14 @@ function FinishPanel({ hunt, now }: { hunt: Pick<Hunt, "startsAt" | "endsAt" | "
   return (
     <section
       aria-label="Time left"
-      className="flex items-center justify-between gap-4 rounded-lg bg-mist px-4 py-3 md:flex-col md:items-start md:justify-center md:gap-3 md:p-5"
+      className="hidden flex-col items-start justify-center gap-3 rounded-lg bg-mist p-5 md:flex"
     >
       <span className="flex items-center gap-2.5 font-medium">
         <FinishMark size={22} />
         {endText(hunt, "live")}
       </span>
       <span className="flex items-baseline gap-1.5">
-        <Countdown to={hunt.endsAt.getTime()} serverNow={now} className="text-3xl leading-none md:text-6xl" />
+        <Countdown to={hunt.endsAt.getTime()} serverNow={now} className="text-6xl leading-none" />
         <span className="text-sm text-ink-2">left</span>
       </span>
     </section>

@@ -86,7 +86,7 @@ function isUniqueViolation(err: unknown): boolean {
  * Throws EmailTakenError when the email is in use.
  */
 export async function insertUser(
-  input: { name: string; email: string; passwordHash: string; isAdmin?: boolean },
+  input: { name: string; email: string; passwordHash: string; isAdmin?: boolean; canCreateHunts?: boolean },
   tx: Pick<Db, "select" | "insert"> = db,
 ): Promise<User> {
   const email = normalizeEmail(input.email);
@@ -95,7 +95,13 @@ export async function insertUser(
   try {
     const [user] = await tx
       .insert(users)
-      .values({ name: input.name.trim(), email, passwordHash: input.passwordHash, isAdmin: input.isAdmin ?? false })
+      .values({
+        name: input.name.trim(),
+        email,
+        passwordHash: input.passwordHash,
+        isAdmin: input.isAdmin ?? false,
+        canCreateHunts: input.canCreateHunts ?? input.isAdmin ?? false,
+      })
       .returning();
     return user;
   } catch (err) {
@@ -126,9 +132,16 @@ export async function createUser(input: {
   email: string;
   password: string;
   isAdmin?: boolean;
+  canCreateHunts?: boolean;
 }): Promise<User> {
   const passwordHash = await hashPassword(input.password);
-  return insertUser({ name: input.name, email: input.email, passwordHash, isAdmin: input.isAdmin });
+  return insertUser({
+    name: input.name,
+    email: input.email,
+    passwordHash,
+    isAdmin: input.isAdmin,
+    canCreateHunts: input.canCreateHunts,
+  });
 }
 
 /**

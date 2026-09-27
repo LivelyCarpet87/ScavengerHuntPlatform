@@ -24,7 +24,11 @@ export function AuthScreen({
   mapSeed?: string;
 }) {
   return (
-    <main className="mx-auto grid w-full max-w-6xl gap-10 px-4 pt-8 pb-16 md:pt-14 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:gap-16">
+    <main
+      id="main"
+      tabIndex={-1}
+      className="mx-auto grid w-full max-w-6xl gap-10 px-4 pt-8 pb-16 outline-none md:pt-14 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:gap-16"
+    >
       <div className="mx-auto w-full max-w-md lg:mx-0 lg:max-w-none">
         <h1 className="font-cond text-4xl font-extrabold tracking-tight text-balance break-words sm:text-5xl">
           {title}

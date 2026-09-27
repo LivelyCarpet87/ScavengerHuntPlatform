@@ -28,6 +28,7 @@ import { deleteFiles, storeUpload, UploadError } from "@/lib/storage";
 import { revalidateHunt, runBatch } from "./batch";
 import { isUniqueViolation, nextTaskCode, TASK_CODE_MAX, uniqueCheckpointCode } from "./codes";
 import { copyFiles, ownedFiles } from "./files";
+import { archivedError } from "./guards";
 import { parseLines } from "./text";
 import { zId, zLongText, zNumber, zOptFile, zOptNumber, zOptText, zText } from "./zod";
 
@@ -125,6 +126,8 @@ export async function saveTaskAction(_prev: ActionState, formData: FormData): Pr
   if (!parsed.ok) return parsed.state;
   const d = parsed.data;
   const { user, hunt } = await requireStaff(d.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
 
   const existing = d.taskId
     ? ((await db
@@ -279,6 +282,8 @@ export async function deleteTaskAction(_prev: ActionState, formData: FormData): 
   const parsed = parseForm(TaskRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const task = await loadTask(hunt, parsed.data.taskId);
   if (!task) redirect(`/manage/${hunt.id}/tasks`);
 
@@ -316,6 +321,8 @@ export async function duplicateTaskAction(_prev: ActionState, formData: FormData
   const parsed = parseForm(TaskRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const task = await loadTask(hunt, parsed.data.taskId);
   if (!task) return fail("This task no longer exists. Someone may have deleted it.");
 
@@ -383,6 +390,8 @@ export async function moveTaskAction(input: { huntId: string; taskId: string; di
   const parsed = MoveSchema.safeParse(input);
   if (!parsed.success) return fail("This page is out of date. Reload it and try again.");
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const list = await db
     .select({ id: tasks.id, sortOrder: tasks.sortOrder, code: tasks.code })
     .from(tasks)
@@ -434,6 +443,8 @@ export async function addHintAction(_prev: ActionState, formData: FormData): Pro
   if (!parsed.ok) return parsed.state;
   const d = parsed.data;
   const { user, hunt } = await requireStaff(d.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const task = await loadTask(hunt, d.taskId);
   if (!task) return fail("This task no longer exists. Reload the page.");
   const top = await db
@@ -466,6 +477,8 @@ export async function updateHintAction(_prev: ActionState, formData: FormData): 
   if (!parsed.ok) return parsed.state;
   const d = parsed.data;
   const { user, hunt } = await requireStaff(d.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const hint = await db
     .select()
     .from(hints)
@@ -495,6 +508,8 @@ export async function deleteHintAction(_prev: ActionState, formData: FormData): 
   const parsed = parseForm(HintRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const hint = await db
     .select()
     .from(hints)
@@ -525,6 +540,8 @@ export async function moveHintAction(input: { huntId: string; hintId: string; di
   const parsed = MoveHintSchema.safeParse(input);
   if (!parsed.success) return fail("This page is out of date. Reload it and try again.");
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const hint = await db
     .select()
     .from(hints)
@@ -573,6 +590,8 @@ export async function uploadAttachmentAction(_prev: ActionState, formData: FormD
   const parsed = parseForm(UploadSchema, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const task = await loadTask(hunt, parsed.data.taskId);
   if (!task) return fail("This task no longer exists. Reload the page.");
   const file = parsed.data.file;
@@ -616,6 +635,8 @@ export async function deleteAttachmentAction(_prev: ActionState, formData: FormD
   const parsed = parseForm(FileRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const row = await db
     .select()
     .from(files)

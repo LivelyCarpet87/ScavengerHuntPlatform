@@ -19,11 +19,14 @@ export function isActive(pathname: string, tab: Pick<NavTab, "href" | "exact">) 
   return tab.exact ? pathname === tab.href : pathname === tab.href || pathname.startsWith(`${tab.href}/`);
 }
 
-/** Horizontal section tabs with an accent underline for the current one. Scrolls sideways on small screens. */
-export function NavTabs({ tabs, className }: { tabs: NavTab[]; className?: string }) {
+/**
+ * Horizontal section tabs with an accent underline for the current one. Scrolls sideways on small screens.
+ * `label` names the navigation landmark (e.g. "Admin sections") when the page has another one.
+ */
+export function NavTabs({ tabs, label, className }: { tabs: NavTab[]; label?: string; className?: string }) {
   const pathname = usePathname();
   return (
-    <nav className={cn("-mx-4 overflow-x-auto px-4 [scrollbar-width:none]", className)}>
+    <nav aria-label={label} className={cn("-mx-4 overflow-x-auto px-4 [scrollbar-width:none]", className)}>
       <ul className="flex min-w-max gap-1 border-b border-line">
         {tabs.map((tab) => {
           const active = isActive(pathname, tab);

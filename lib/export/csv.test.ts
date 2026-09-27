@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { attachmentDisposition, CSV_BOM, csvCell, csvRow, defuseFormula, toCsv } from "./csv";
+import { attachmentDisposition, CSV_BOM, csvCell, csvRow, csvTime, defuseFormula, toCsv } from "./csv";
 
 describe("csvCell", () => {
   test("leaves plain text alone", () => {
@@ -91,5 +91,29 @@ describe("attachmentDisposition", () => {
     expect(attachmentDisposition('é "x".csv')).toBe(
       "attachment; filename=\"_ _x_.csv\"; filename*=UTF-8''%C3%A9%20%22x%22.csv",
     );
+  });
+});
+
+describe("csvTime", () => {
+  const evening = Date.UTC(2026, 8, 27, 19, 24, 52, 929);
+
+  test("writes local time in the hunt's zone, the way spreadsheets read dates", () => {
+    expect(csvTime(evening, "Asia/Shanghai")).toBe("2026-09-28 03:24:52");
+    expect(csvTime(new Date(evening), "Europe/Berlin")).toBe("2026-09-27 21:24:52");
+    expect(csvTime(evening, "UTC")).toBe("2026-09-27 19:24:52");
+  });
+
+  test("midnight is 00, not 24", () => {
+    expect(csvTime(Date.UTC(2026, 8, 27, 16, 0, 5), "Asia/Shanghai")).toBe("2026-09-28 00:00:05");
+  });
+
+  test("blank for missing or invalid times, UTC for an unknown zone", () => {
+    expect(csvTime(null, "UTC")).toBeNull();
+    expect(csvTime(new Date(Number.NaN), "UTC")).toBeNull();
+    expect(csvTime(evening, "Not/AZone")).toBe("2026-09-27 19:24:52");
+  });
+
+  test("stays a plain field in a row", () => {
+    expect(csvRow([csvTime(evening, "Asia/Shanghai"), "Night Owls"])).toBe("2026-09-28 03:24:52,Night Owls");
   });
 });

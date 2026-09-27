@@ -2,15 +2,14 @@ import { History, Snowflake } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { AdjustmentForm, RemoveAdjustment } from "@/components/judge/adjustment-form";
+import { ContestEntries } from "@/components/judge/contest-entries";
 import { DownloadLink } from "@/components/judge/download-link";
 import { StandingsTable } from "@/components/judge/standings-table";
 import { LiveRefresh } from "@/components/live/live-refresh";
-import { Ordinal } from "@/components/ui/bib";
 import { ButtonLink } from "@/components/ui/button";
 import { ControlMarker } from "@/components/ui/control";
 import { LiveDot, Notice, PageHeader } from "@/components/ui/misc";
 import { StatusGlyph } from "@/components/ui/status";
-import { TeamAvatar } from "@/components/ui/team-badge";
 import { requireStaff, roleAtLeast } from "@/lib/auth/access";
 import { formatBytes, formatPoints, formatSigned, formatTime, plural } from "@/lib/format";
 import { huntPhase } from "@/lib/hunts";
@@ -48,6 +47,8 @@ export default async function StaffScoreboardPage({ params, searchParams }: Prop
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const adjustFor = typeof sp.adjust === "string" && teamOptions.some((t) => t.id === sp.adjust) ? sp.adjust : null;
+  // One team's breakdown at a time, kept in the URL (so it survives live refreshes and can be linked to).
+  const openTeam = typeof sp.team === "string" && teamOptions.some((t) => t.id === sp.team) ? sp.team : null;
 
   const contests = board.tasks.filter((t) => t.kind === "contest");
   const scoredAnything = standings.standings.some((s) => s.total !== 0 || s.solved > 0);
@@ -132,6 +133,8 @@ export default async function StaffScoreboardPage({ params, searchParams }: Prop
             timeZone={tz}
             canAdjust={organizer && hunt.status !== "archived"}
             serverNow={now}
+            openTeamId={openTeam}
+            keep={adjustFor ? { adjust: adjustFor } : {}}
           />
         )}
       </section>
@@ -330,27 +333,18 @@ export default async function StaffScoreboardPage({ params, searchParams }: Prop
                   {entries.length === 0 ? (
                     <p className="text-sm text-ink-2">No accepted entries yet.</p>
                   ) : (
-                    <ol className="divide-y divide-line border-y border-line">
-                      {entries.map((e) => {
+                    <ContestEntries
+                      rows={entries.map((e) => {
                         const team = standings.teams[e.teamId];
-                        const scoring = e.place <= t.contestPlaces;
-                        return (
-                          <li key={e.teamId} className={cn("flex items-center gap-3 py-2.5", !scoring && "text-ink-2")}>
-                            <span className="w-12 shrink-0 text-2xl leading-none">
-                              <Ordinal n={e.place} />
-                            </span>
-                            {team ? <TeamAvatar team={team} size="sm" /> : null}
-                            <span className="min-w-0 flex-1 truncate font-semibold">{team?.name ?? "A team"}</span>
-                            <span className="shrink-0 text-sm">
-                              {e.value != null ? formatMeasured(e.value, t.contestUnit) : formatTime(e.at, tz)}
-                            </span>
-                            <span className="w-14 shrink-0 text-right font-bib text-xl">
-                              {scoring ? formatPoints(e.points) : "–"}
-                            </span>
-                          </li>
-                        );
+                        return {
+                          teamId: e.teamId,
+                          team: team ? { name: team.name, emoji: team.emoji, color: team.color } : null,
+                          place: e.place,
+                          detail: e.value != null ? formatMeasured(e.value, t.contestUnit) : formatTime(e.at, tz),
+                          points: e.place <= t.contestPlaces ? e.points : null,
+                        };
                       })}
-                    </ol>
+                    />
                   )}
                 </section>
               );

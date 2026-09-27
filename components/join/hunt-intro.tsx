@@ -9,6 +9,7 @@ import { canViewGallery, canViewScoreboard, huntPhase } from "@/lib/hunts";
 import { extractHuntCode, joinPolicy, safeNextPath } from "@/lib/player/join";
 import { codeGuard, countListedTasks, getHuntCover, pickTeamLook } from "@/lib/player/queries";
 import { links } from "@/lib/url";
+import { FormerTeamNotice } from "./former-team-notice";
 import { HuntHero } from "./hunt-hero";
 import type { HuntCodeMode } from "./join-forms";
 import { JoinPanel } from "./join-panel";
@@ -52,6 +53,7 @@ export async function HuntIntro({
         at={[hunt.startsAt?.getTime(), hunt.endsAt?.getTime(), hunt.startsAt && hunt.startsAt.getTime() - 86_400_000]}
       />
       <div className="flex flex-col gap-4">
+        {open ? <FormerTeamNotice huntId={hunt.id} /> : null}
         {hunt.status === "draft" ? (
           <Notice
             tone="warning"
@@ -75,14 +77,7 @@ export async function HuntIntro({
           </p>
         ) : null}
 
-        <HuntHero
-          hunt={hunt}
-          phase={phase}
-          controls={controls}
-          cover={cover}
-          now={now.getTime()}
-          className={hunt.status === "draft" || staffRole ? "mt-0 border-t sm:mt-0" : undefined}
-        />
+        <HuntHero hunt={hunt} phase={phase} controls={controls} cover={cover} now={now.getTime()} />
       </div>
 
       {open ? (

@@ -151,12 +151,12 @@ export function buildTaskBoard({
       points,
       status,
     });
+    // No link on the card: the task list is where tasks are opened (one tab stop per task, not two).
     cells.push({
       id: task.id,
       code: task.code,
       title: task.title,
       state: marker,
-      href,
       fresh: solvedAt != null && now - solvedAt < FRESH_MS,
     });
   }

@@ -22,12 +22,15 @@ export function CodeEntry({
   defaultCode = "",
   initialError,
   autoFocus,
+  submitVariant = "primary",
   className,
 }: {
   defaultCode?: string;
   /** Shown until the code is edited (e.g. /join/[code] with an unknown code). */
   initialError?: string;
   autoFocus?: boolean;
+  /** "secondary" when finding a hunt isn't the page's main action (a live hunt is waiting). */
+  submitVariant?: "primary" | "secondary";
   className?: string;
 }) {
   const router = useRouter();
@@ -92,12 +95,18 @@ export function CodeEntry({
           "relative grid h-[4.25rem] min-w-0 flex-1 place-items-center rounded-md border-2 font-bib text-5xl leading-none transition-colors duration-150 sm:h-24 sm:text-7xl",
           digit ? "border-accent bg-accent-wash text-ink" : "border-line-strong bg-paper text-ink-3",
           active && "border-ink",
-          error && "border-danger",
+          // One color says "wrong": no course purple left on the boxes.
+          error && (digit ? "border-danger bg-danger-wash" : "border-danger"),
         )}
       >
         {digit ?? ""}
         {active ? (
-          <span className="absolute inset-x-2.5 bottom-2 h-[3px] rounded-full bg-accent sm:inset-x-4 sm:bottom-3" />
+          <span
+            className={cn(
+              "absolute inset-x-2.5 bottom-2 h-[3px] rounded-full sm:inset-x-4 sm:bottom-3",
+              error ? "bg-danger" : "bg-accent",
+            )}
+          />
         ) : null}
       </span>
     );
@@ -121,7 +130,12 @@ export function CodeEntry({
       <label htmlFor={id} className="sr-only">
         Hunt code, six digits
       </label>
-      <div className="relative rounded-lg has-focus-visible:outline-3 has-focus-visible:outline-offset-4 has-focus-visible:outline-overprint">
+      <div
+        className={cn(
+          "relative rounded-lg has-focus-visible:outline-3 has-focus-visible:outline-offset-4",
+          error ? "has-focus-visible:outline-danger" : "has-focus-visible:outline-overprint",
+        )}
+      >
         <div aria-hidden className="flex items-stretch gap-1.5 sm:gap-2">
           {[0, 1, 2].map(box)}
           <span className="w-1.5 shrink-0 sm:w-3" />
@@ -170,13 +184,14 @@ export function CodeEntry({
       </div>
 
       <div className="mt-2 flex flex-col gap-2.5">
-        <SubmitButton size="lg" className="w-full" pendingLabel="Finding hunt">
+        <SubmitButton size="lg" variant={submitVariant} className="w-full" pendingLabel="Finding hunt">
           Find hunt
         </SubmitButton>
         <QrScanButton
           size="lg"
           variant="secondary"
           className="w-full"
+          onTypeInstead={() => inputRef.current?.focus()}
           onResult={(text) => {
             if (accept(text)) return true;
             toast({

@@ -4,15 +4,21 @@ import { RotateCcw, Trash } from "lucide-react";
 import { deleteHuntAction, resetHuntAction } from "@/lib/staff/hunt-actions";
 import { ConfirmAction } from "../confirm-action";
 
-/** Owner-only: wipe the results, or delete the hunt entirely. Both need the name typed. */
+/**
+ * Owner-only: wipe the results, or delete the hunt entirely. Both need the
+ * name typed. An archived hunt's results are read-only, so it can't be reset
+ * until it's restored (deleting it is still possible).
+ */
 export function DangerZone({
   huntId,
   huntName,
   counts,
+  archived = false,
 }: {
   huntId: string;
   huntName: string;
   counts: { submissions: number; hintReveals: number; adjustments: number; teams: number; tasks: number };
+  archived?: boolean;
 }) {
   const n = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
   return (
@@ -24,8 +30,14 @@ export function DangerZone({
             Deletes every submission and photo, hint reveal and adjustment, so every team is back to zero. Teams,
             players and tasks stay. Useful after a test run.
           </p>
+          {archived ? (
+            <p className="mt-1 text-sm font-medium text-ink">
+              The hunt is archived, so its results are read-only. Restore it to reset it.
+            </p>
+          ) : null}
         </div>
         <ConfirmAction
+          disabled={archived}
           action={resetHuntAction}
           fields={{ huntId }}
           label="Reset hunt"

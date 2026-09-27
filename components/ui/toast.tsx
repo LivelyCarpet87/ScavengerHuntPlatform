@@ -83,10 +83,10 @@ function ToastView({ item }: { item: ToastItem }) {
       <button
         type="button"
         onClick={() => setLeaving(true)}
-        className="-m-1 rounded-sm p-1 text-ink-3 hover:text-ink"
+        className="-my-2.5 -mr-2.5 grid size-11 shrink-0 place-items-center rounded-md text-ink-3 hover:text-ink"
         aria-label="Dismiss"
       >
-        <X className="size-4" />
+        <X className="size-4" aria-hidden />
       </button>
     </li>
   );

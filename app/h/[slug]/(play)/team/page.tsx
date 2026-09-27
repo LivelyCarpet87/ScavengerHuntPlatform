@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
+import { RememberTeam } from "@/components/join/device-team";
 import { LiveRefresh } from "@/components/live/live-refresh";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { PushToggle } from "@/components/pwa/push-toggle";
-import { InviteCard } from "@/components/team/invite-card";
 import { LeaveTeam } from "@/components/team/leave-team";
 import { MemberList } from "@/components/team/member-list";
 import { MyNameForm } from "@/components/team/my-name-form";
 import { TeamEditButton } from "@/components/team/team-edit";
+import { TeamInviteSection } from "@/components/team/team-invite";
 import { Notice } from "@/components/ui/misc";
 import { TeamAvatar } from "@/components/ui/team-badge";
 import { requirePlayer } from "@/lib/auth/access";
 import { plural } from "@/lib/format";
 import { getHuntBySlug, huntPhase } from "@/lib/hunts";
-import { getTeamMembers } from "@/lib/player/queries";
+import { getTeamMembers, leavingOutcome } from "@/lib/player/queries";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -24,9 +25,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function TeamPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const { hunt, me } = await requirePlayer(slug);
-  const members = await getTeamMembers(me.team.id);
   const phase = huntPhase(hunt);
   const locked = phase === "ended" || phase === "archived";
+  const [members, outcome] = await Promise.all([
+    getTeamMembers(me.team.id),
+    locked ? null : leavingOutcome(me.team.id, me.player.id),
+  ]);
   const isCaptain = me.player.isCaptain;
   const others = members.filter((m) => m.id !== me.player.id);
   const nextCaptain = isCaptain ? ((others.find((m) => m.sessionId) ?? others[0])?.name ?? null) : null;
@@ -35,6 +39,7 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
   return (
     <div className="flex flex-col gap-10">
       <LiveRefresh huntId={hunt.id} on={["teams.changed", "hunt.changed"]} />
+      <RememberTeam huntId={hunt.id} teamName={me.team.name} playerName={me.player.name} />
 
       <header className="flex flex-col gap-5 sm:flex-row sm:items-center">
         <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -57,12 +62,12 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
           Your team is final: names, members and captain can’t change any more.
         </Notice>
       ) : (
-        <section aria-labelledby="invite-heading" className="flex flex-col gap-3">
-          <h2 id="invite-heading" className="font-cond text-2xl font-bold tracking-tight">
-            Invite teammates
-          </h2>
-          <InviteCard hunt={hunt} team={me.team} />
-        </section>
+        <TeamInviteSection
+          hunt={hunt}
+          team={me.team}
+          members={members}
+          makeRoom={isCaptain ? "To make room, remove a member below." : null}
+        />
       )}
 
       <section aria-labelledby="members-heading" className="flex flex-col gap-2">
@@ -102,14 +107,9 @@ export default async function TeamPage({ params }: { params: Promise<{ slug: str
 
       <InstallPrompt />
 
-      {!locked ? (
+      {outcome ? (
         <div className="border-t border-line pt-6">
-          <LeaveTeam
-            huntId={hunt.id}
-            teamName={me.team.name}
-            nextCaptain={nextCaptain}
-            lastMember={others.length === 0}
-          />
+          <LeaveTeam huntId={hunt.id} teamName={me.team.name} nextCaptain={nextCaptain} outcome={outcome} />
         </div>
       ) : null}
     </div>

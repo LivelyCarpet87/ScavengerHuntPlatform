@@ -12,6 +12,9 @@ export function spacedJoinCode(code: string) {
 /**
  * How players get in: the hunt code in race-bib numerals, its QR, and quick
  * ways to pass it on (copy, share sheet, printable poster, big screen).
+ * Before the start sharing is the job, so the code is as big as it gets; once
+ * the hunt is live (`live`) the countdown and the judging queue lead, and the
+ * code steps down for the odd late team.
  */
 export function SharePanel({
   huntId,
@@ -21,6 +24,7 @@ export function SharePanel({
   joinUrl,
   host,
   isDraft,
+  live = false,
   className,
 }: {
   huntId: string;
@@ -30,6 +34,7 @@ export function SharePanel({
   joinUrl: string;
   host: string;
   isDraft: boolean;
+  live?: boolean;
   className?: string;
 }) {
   const spaced = spacedJoinCode(joinCode);
@@ -41,14 +46,15 @@ export function SharePanel({
         Hunt code
       </h2>
       <p className="mt-1 text-sm text-ink-2">
-        Players type it at <span className="font-semibold text-ink">{host}</span>, or scan the code.
+        {live ? "Late teams can still join: they" : "Players"} type it at{" "}
+        <span className="font-semibold text-ink">{host}</span>, or scan the code.
       </p>
-      <p className="mt-3 font-bib text-6xl tracking-wide">
+      <p className={cn("mt-3 font-bib tracking-wide", live ? "text-4xl" : "text-6xl")}>
         <span aria-hidden>{spaced}</span>
         <span className="sr-only">{joinCode.split("").join(" ")}</span>
       </p>
       <div className="mt-4 flex items-start gap-4">
-        <QrCode value={joinUrl} size={132} label={`QR code to join ${huntName}`} className="shrink-0" />
+        <QrCode value={joinUrl} size={live ? 96 : 132} label={`QR code to join ${huntName}`} className="shrink-0" />
         <div className="flex min-w-0 flex-col gap-2">
           <CopyButton value={joinUrl} label="Copy link" copiedLabel="Link copied" />
           <ShareButton

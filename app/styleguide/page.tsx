@@ -162,6 +162,7 @@ export default function StyleguidePage() {
               <Switch label="Registration open" hint="New teams can join with the hunt code." defaultChecked />
               <Segmented
                 name="vis"
+                label="Scoreboard visible to"
                 defaultValue="players"
                 options={[
                   { value: "public", label: "Everyone" },
@@ -174,6 +175,7 @@ export default function StyleguidePage() {
           <div className="flex flex-col gap-6">
             <ChoiceCards
               name="kind"
+              label="Task type"
               defaultValue="media"
               options={[
                 {

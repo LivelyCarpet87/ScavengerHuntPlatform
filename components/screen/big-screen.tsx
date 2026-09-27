@@ -3,6 +3,7 @@
 import { Maximize, Minimize, Snowflake, WifiOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { requestRefresh } from "@/components/live/refresh";
 import { useHuntEvents } from "@/components/live/use-hunt-events";
 import { useNow } from "@/components/ui/clock";
 import { FinishMark, StartMark } from "@/components/ui/control";
@@ -115,10 +116,20 @@ export function BigScreen({
     debounce.current = setTimeout(() => void refresh(), 400);
   }, [refresh]);
 
-  useHuntEvents(hunt.id, (e) => {
-    if (e.type === "hunt.changed") router.refresh();
-    if (REFRESH_ON.includes(e.type)) schedule();
-  });
+  useHuntEvents(
+    hunt.id,
+    (e) => {
+      if (e.type === "hunt.changed") requestRefresh(router);
+      if (REFRESH_ON.includes(e.type)) schedule();
+    },
+    {
+      // Missed events that couldn't be replayed (the server restarted): reload everything.
+      onResync: () => {
+        requestRefresh(router);
+        schedule();
+      },
+    },
+  );
 
   useEffect(() => {
     const t = setInterval(() => void refresh(), POLL_MS);
@@ -225,6 +236,7 @@ export function BigScreen({
       </header>
 
       <main
+        id="main"
         className={cn(
           "relative grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-8 px-4 pb-6 sm:px-6 lg:gap-[2.6rem] lg:px-[2.6rem] lg:pb-[1.4rem]",
           hasAside && "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
@@ -268,7 +280,7 @@ export function BigScreen({
       </main>
 
       {feed.items.length > 0 ? (
-        <footer className="relative flex h-[4.4rem] shrink-0 items-center gap-6 border-t border-line bg-paper px-4 sm:px-6 lg:px-[2.6rem]">
+        <footer className="relative flex h-[4.4rem] shrink-0 items-center gap-4 border-t border-line bg-paper px-4 sm:px-6 lg:px-[2.6rem]">
           <span className="shrink-0 font-cond text-[1.5rem] font-extrabold">Latest</span>
           <Ticker items={feed.items} />
         </footer>

@@ -1,9 +1,24 @@
+"use client";
+
 import { TeamAvatar } from "@/components/ui/team-badge";
 import type { StandingRow } from "@/lib/live/types";
 import { YouTag } from "./podium";
+import { useLiveStandings } from "./use-live-standings";
 
-/** Before the start: who is lined up, alphabetically, without scores. */
-export function RegisteredTeams({ rows, viewerTeamId }: { rows: StandingRow[]; viewerTeamId: string | null }) {
+/** Before the start: who is lined up, alphabetically, without scores. New teams appear as they register. */
+export function RegisteredTeams({
+  huntId,
+  rows: serverRows,
+  updatedAt,
+  viewerTeamId,
+}: {
+  huntId: string;
+  rows: StandingRow[];
+  /** When `rows` were computed (StandingsPayload.updatedAt). */
+  updatedAt: string;
+  viewerTeamId: string | null;
+}) {
+  const rows = useLiveStandings(huntId, serverRows, updatedAt);
   const teams = rows.filter((r) => !r.hidden).sort((a, b) => a.name.localeCompare(b.name));
   if (teams.length === 0) {
     return <p className="text-ink-2">No teams have registered yet.</p>;

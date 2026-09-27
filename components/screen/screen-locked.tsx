@@ -16,6 +16,7 @@ export function ScreenLocked({
   const forPlayers = hunt.scoreboardVisibility === "players";
   return (
     <main
+      id="main"
       data-accent={hunt.accent}
       className="relative grid min-h-dvh place-items-center overflow-hidden bg-paper px-6"
     >

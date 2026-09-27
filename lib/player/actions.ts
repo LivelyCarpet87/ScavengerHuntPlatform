@@ -13,18 +13,18 @@ import { getHuntById, huntPhase } from "@/lib/hunts";
 import { newCode } from "@/lib/ids";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { publish } from "@/lib/realtime/bus";
+import { extractHuntCode, joinPolicy, safeNextPath, teamNameKey } from "./join";
+import { zPlayerName, zTeamCode, zTeamColor, zTeamEmoji, zTeamName } from "./join-schemas";
 import {
-  extractHuntCode,
-  joinPolicy,
-  safeNextPath,
-  teamNameKey,
-  zPlayerName,
-  zTeamCode,
-  zTeamColor,
-  zTeamEmoji,
-  zTeamName,
-} from "./join";
-import { codeGuard, findHuntForCode, getTeamByCode, isTeamNameTaken, suggestTeamName } from "./queries";
+  abandonedTeam,
+  codeGuard,
+  findHuntForCode,
+  getTeamByCode,
+  isTeamNameTaken,
+  type LeavingOutcome,
+  leavingOutcome,
+  suggestTeamName,
+} from "./queries";
 
 /*
  * Player Server Actions: finding a hunt, starting and joining teams, and
@@ -110,6 +110,25 @@ async function handOffCaptaincy(tx: Tx, leaving: Pick<Player, "id" | "teamId" | 
     .limit(1)
     .get();
   if (next) await tx.update(players).set({ isCaptain: true }).where(eq(players.id, next.id));
+}
+
+/**
+ * Removes a team its last member just left, if it's abandoned (see
+ * abandonedTeam in ./queries). Runs inside the leaving transaction, after the
+ * member's row is gone. Returns true when the team was removed.
+ */
+async function dropAbandonedTeam(tx: Tx, huntId: string, teamId: string): Promise<boolean> {
+  const removed = await tx
+    .delete(teams)
+    .where(and(abandonedTeam(teamId), eq(teams.huntId, huntId)))
+    .returning({ id: teams.id });
+  return removed.length > 0;
+}
+
+/** Tells every screen that a team changed — and, when it was removed, that the standings did too. */
+function publishTeamChange(huntId: string, teamId: string, removed = false) {
+  publish(huntId, { type: "teams.changed", teamId });
+  if (removed) publish(huntId, { type: "scores.changed" });
 }
 
 class TeamFullError extends Error {}
@@ -214,7 +233,14 @@ export async function createTeam(_prev: ActionState, formData: FormData): Promis
   redirect(safeNextPath(next, hunt.slug) ?? `/h/${hunt.slug}?welcome=1`);
 }
 
-export type JoinTeamState = ActionState<{ confirmMove: { from: string; to: string } }>;
+export type MoveConfirmation = {
+  from: string;
+  to: string;
+  /** What happens to the team the device leaves. */
+  fromOutcome: LeavingOutcome;
+};
+
+export type JoinTeamState = ActionState<{ confirmMove: MoveConfirmation }>;
 
 const JoinTeamSchema = z.object({
   huntId: zId,
@@ -250,12 +276,19 @@ export async function joinTeam(_prev: JoinTeamState, formData: FormData): Promis
   const current = await getPlayer(hunt.id);
   if (current?.team.id === team.id) redirect(destination ?? home);
   if (current && confirmMove !== "1") {
-    return ok(undefined, { confirmMove: { from: current.team.name, to: team.name } });
+    return ok(undefined, {
+      confirmMove: {
+        from: current.team.name,
+        to: team.name,
+        fromOutcome: await leavingOutcome(current.team.id, current.player.id),
+      },
+    });
   }
 
   const session = await ensureSession();
+  let removedOldTeam = false;
   try {
-    await db.transaction(async (tx) => {
+    removedOldTeam = await db.transaction(async (tx) => {
       const members = await tx.select({ n: count() }).from(players).where(eq(players.teamId, team.id)).get();
       if (hunt.maxTeamSize && (members?.n ?? 0) >= hunt.maxTeamSize) throw new TeamFullError();
       const captain = await tx
@@ -263,17 +296,18 @@ export async function joinTeam(_prev: JoinTeamState, formData: FormData): Promis
         .from(players)
         .where(and(eq(players.teamId, team.id), eq(players.isCaptain, true)))
         .get();
-      if (current) {
-        await handOffCaptaincy(tx, current.player);
-        await tx
-          .update(players)
-          .set({ teamId: team.id, name: playerName, isCaptain: !captain, seenUpdatesAt: new Date() })
-          .where(eq(players.id, current.player.id));
-      } else {
+      if (!current) {
         await tx
           .insert(players)
           .values({ huntId: hunt.id, teamId: team.id, sessionId: session.id, name: playerName, isCaptain: !captain });
+        return false;
       }
+      await handOffCaptaincy(tx, current.player);
+      await tx
+        .update(players)
+        .set({ teamId: team.id, name: playerName, isCaptain: !captain, seenUpdatesAt: new Date() })
+        .where(eq(players.id, current.player.id));
+      return dropAbandonedTeam(tx, hunt.id, current.team.id);
     });
   } catch (err) {
     if (err instanceof TeamFullError) {
@@ -287,7 +321,7 @@ export async function joinTeam(_prev: JoinTeamState, formData: FormData): Promis
   }
 
   publish(hunt.id, { type: "teams.changed", teamId: team.id });
-  if (current) publish(hunt.id, { type: "teams.changed", teamId: current.team.id });
+  if (current) publishTeamChange(hunt.id, current.team.id, removedOldTeam);
   refreshHunt(hunt);
   redirect(destination ?? `${home}?welcome=1`);
 }
@@ -339,12 +373,19 @@ export async function reclaimPlayer(_prev: JoinTeamState, formData: FormData): P
     return fail(`This device is already on ${team.name} as ${current.player.name}.`);
   }
   if (current && confirmMove !== "1") {
-    return ok(undefined, { confirmMove: { from: current.team.name, to: team.name } });
+    return ok(undefined, {
+      confirmMove: {
+        from: current.team.name,
+        to: team.name,
+        fromOutcome: await leavingOutcome(current.team.id, current.player.id),
+      },
+    });
   }
 
   const session = await ensureSession();
+  let removedOldTeam = false;
   try {
-    await db.transaction(async (tx) => {
+    removedOldTeam = await db.transaction(async (tx) => {
       if (current) {
         await handOffCaptaincy(tx, current.player);
         await tx.delete(players).where(eq(players.id, current.player.id));
@@ -356,6 +397,7 @@ export async function reclaimPlayer(_prev: JoinTeamState, formData: FormData): P
         .returning({ id: players.id });
       // Someone else picked this name a moment ago: undo leaving the old team too.
       if (rows.length === 0) throw new AlreadyClaimedError();
+      return current ? dropAbandonedTeam(tx, hunt.id, current.team.id) : false;
     });
   } catch (err) {
     if (err instanceof AlreadyClaimedError) return fail(`${target.name} was just picked on another device.`);
@@ -363,7 +405,7 @@ export async function reclaimPlayer(_prev: JoinTeamState, formData: FormData): P
   }
 
   publish(hunt.id, { type: "teams.changed", teamId: team.id });
-  if (current) publish(hunt.id, { type: "teams.changed", teamId: current.team.id });
+  if (current) publishTeamChange(hunt.id, current.team.id, removedOldTeam);
   refreshHunt(hunt);
   redirect(safeNextPath(next, hunt.slug) ?? home);
 }
@@ -499,18 +541,23 @@ export async function transferCaptain(_prev: ActionState, formData: FormData): P
 
 const HuntOnlySchema = z.object({ huntId: zId });
 
-/** Leaves the team on this device. The team, its submissions and points stay. */
+/**
+ * Leaves the team on this device. The team, its submissions and points stay —
+ * unless this was its last member and it never did anything (see
+ * dropAbandonedTeam), in which case it goes too.
+ */
 export async function leaveTeam(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const parsed = parseForm(HuntOnlySchema, formData);
   if (!parsed.ok) return parsed.state;
   const ctx = await teamContext(parsed.data.huntId);
   if (!ctx.ok) return fail(ctx.error);
   const { hunt, me } = ctx;
-  await db.transaction(async (tx) => {
+  const removed = await db.transaction(async (tx) => {
     await handOffCaptaincy(tx, me.player);
     await tx.delete(players).where(eq(players.id, me.player.id));
+    return dropAbandonedTeam(tx, hunt.id, me.team.id);
   });
-  publish(hunt.id, { type: "teams.changed", teamId: me.team.id });
+  publishTeamChange(hunt.id, me.team.id, removed);
   refreshHunt(hunt);
   redirect(`/h/${hunt.slug}`);
 }

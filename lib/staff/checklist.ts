@@ -31,7 +31,8 @@ export type SetupInput = {
   helperCount: number;
   inviteCount: number;
   playerCount: number;
-  printedCheckpoints: boolean;
+  /** Checkpoints whose poster has been printed with their current code. */
+  printedCheckpoints: number;
 };
 
 export function setupSteps(input: SetupInput): SetupStep[] {
@@ -76,15 +77,19 @@ export function setupSteps(input: SetupInput): SetupStep[] {
     },
   ];
   if (input.checkpointCount > 0) {
+    const printed = Math.min(input.printedCheckpoints, input.checkpointCount);
+    const allPrinted = printed === input.checkpointCount;
     steps.push({
       id: "posters",
-      title: input.printedCheckpoints ? "Checkpoint posters printed" : "Print checkpoint posters",
-      detail: input.printedCheckpoints
+      title: allPrinted ? "Checkpoint posters printed" : "Print checkpoint posters",
+      detail: allPrinted
         ? "Printed. Put each one up where its task says it is."
-        : `${plural(input.checkpointCount, "checkpoint")} ${input.checkpointCount === 1 ? "needs" : "need"} a poster on site.`,
-      done: input.printedCheckpoints,
+        : printed > 0
+          ? `${printed} of ${input.checkpointCount} printed with their current code. Print the rest before the start.`
+          : `${plural(input.checkpointCount, "checkpoint")} ${input.checkpointCount === 1 ? "needs" : "need"} a poster on site.`,
+      done: allPrinted,
       href: `${base}/print/checkpoints`,
-      cta: input.printedCheckpoints ? "Print again" : "Print posters",
+      cta: allPrinted ? "Print again" : "Print posters",
     });
   }
   const published = input.status !== "draft";

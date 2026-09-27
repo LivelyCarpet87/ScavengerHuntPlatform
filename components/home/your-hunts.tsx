@@ -7,15 +7,20 @@ import { LiveDot } from "@/components/ui/misc";
 import { TeamAvatar } from "@/components/ui/team-badge";
 import { formatDate, formatDateTime, formatPoints, formatTime } from "@/lib/format";
 import type { DeviceHunt } from "@/lib/player/queries";
+import { cn } from "@/lib/utils";
 
-/** Hunts this device has joined, each with its terrain tile and the team's standing. */
-export function YourHunts({ hunts }: { hunts: DeviceHunt[] }) {
+/**
+ * Hunts this device has joined, each with its terrain tile and the team's
+ * standing. `leading` when it opens the page (a hunt is live): the page's h1.
+ */
+export function YourHunts({ hunts, leading = false }: { hunts: DeviceHunt[]; leading?: boolean }) {
   if (hunts.length === 0) return null;
+  const Heading = leading ? "h1" : "h2";
   return (
-    <section aria-labelledby="your-hunts" className="mx-auto max-w-xl px-4 pt-10">
-      <h2 id="your-hunts" className="font-cond text-2xl font-bold tracking-tight">
+    <section aria-labelledby="your-hunts" className={cn("mx-auto max-w-xl px-4", leading ? "pt-8" : "pt-10")}>
+      <Heading id="your-hunts" className="font-cond text-2xl font-bold tracking-tight">
         Your hunts
-      </h2>
+      </Heading>
       <ul className="mt-3 divide-y divide-line border-y border-line">
         {hunts.map((entry) => (
           <li key={entry.hunt.id}>

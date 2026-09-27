@@ -3,15 +3,19 @@ import { cn } from "@/lib/utils";
 
 /*
  * Form controls. Inputs are 48px tall on phones (thumbs, gloves, sunlight),
- * sit on the sunken "mist" surface and get an ink ring on focus. Pair every
- * control with a visible label via <Field>.
+ * sit on the sunken "mist" surface and get an ink ring on focus. An invalid
+ * control has a red ring; focused, it keeps the red ring and gains an outer
+ * ink ring, so focus stays visible exactly when an error moves it there.
+ * Pair every control with a visible label via <Field>.
  */
 
 const control =
   "w-full rounded-md border border-transparent bg-mist px-3.5 text-base text-ink placeholder:text-ink-3 " +
   "transition-[box-shadow,background-color] duration-150 hover:bg-mist-2 " +
   "focus:bg-paper focus:outline-none focus:shadow-[inset_0_0_0_2px_var(--ink)] " +
-  "aria-invalid:shadow-[inset_0_0_0_2px_var(--danger)] disabled:opacity-50";
+  "aria-invalid:shadow-[inset_0_0_0_2px_var(--danger)] " +
+  "aria-invalid:focus:shadow-[inset_0_0_0_2px_var(--danger),0_0_0_2px_var(--paper),0_0_0_4px_var(--ink)] " +
+  "disabled:opacity-50";
 
 export function Input({ className, ...props }: ComponentProps<"input">) {
   return <input className={cn(control, "h-12", className)} {...props} />;

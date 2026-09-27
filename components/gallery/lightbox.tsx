@@ -86,10 +86,14 @@ export function Lightbox({
             <button type="button" onClick={onClose} className={buttonClass("ghost", "icon")} aria-label="Close">
               <X aria-hidden className="size-6" />
             </button>
-            <p className="font-bib text-lg text-ink-2" aria-live="polite">
+            <p className="font-bib text-lg text-ink-2" aria-hidden>
               {i + 1}
               <span className="px-1 font-sans text-sm font-medium">of</span>
               {count}
+            </p>
+            {/* Stepping announces the whole position, not just the number that changed. */}
+            <p className="sr-only" aria-live="polite" aria-atomic="true">
+              {`${item.kind === "video" ? "Video" : "Photo"} ${i + 1} of ${count}: ${item.team.name}, ${item.task.title}`}
             </p>
             <a href={`${item.original}?download=1`} download className={buttonClass("quiet", "sm", "ml-auto h-11")}>
               <Download aria-hidden />

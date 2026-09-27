@@ -58,6 +58,8 @@ headings, no mono-font data labels, no accenting a single word in a headline.
 * **Control marker** — circle with the task's code (e.g. 31). A task's state is
   shown by shape *and* color: ring (to do), dashed ring on yellow (in review),
   solid disc (accepted), slashed ring (not accepted), dotted grey (locked).
+  The code always stays readable: on the slashed ring it sits on top of the
+  slash with a paper halo, like lettering on a map.
 * **Start triangle / finish double circle** — schedule start and end.
 * **Pin punch** — every task has a unique punch pattern (`PunchMark`, seeded
   by task id). It appears on the team's **control card** (`ControlCard`) when
@@ -77,8 +79,11 @@ steps. There are no lines connecting controls (in a Score-O you choose the order
 * Player pages: single column, `max-w-3xl`, bottom tab bar on phones (Tasks,
   Scores, Team, Updates), header tabs from `md`. 48px+ touch targets; primary
   actions reachable at the bottom of the screen on phones.
-* Staff pages: sidebar on desktop, header menu on phones; content `max-w-6xl`.
-  Dense but calm: lists and tables over card grids.
+* Staff pages: sidebar on desktop, header menu on phones (a full-height modal
+  sheet); content `max-w-6xl`. Dense but calm: lists and tables over card grids.
+* Anything pinned to the bottom of the screen (tab bar, a page's action bar)
+  carries `data-bottom-nav`, `data-bottom-bar` or `data-action-bar`, so keyboard
+  focus is scrolled clear of it (app/globals.css).
 * Cards are for things that are objects (a hunt, a submission photo, a team
   card to print) — not a wrapper for every section. Prefer lists with dividers
   (`divide-y divide-line`), headings and whitespace. Vary radius by hierarchy
@@ -110,11 +115,18 @@ honoured globally.
 
 ## Quality floor
 
-* Works at 360px wide; no horizontal scroll on phones.
-* Keyboard: visible focus (built in), logical order, all actions reachable.
+* Works at 360px wide; no horizontal scroll on phones (down to 320px).
+* Keyboard: visible focus (built in, and kept on invalid fields: red ring plus
+  an outer ink ring), logical order, all actions reachable; a "Skip to content"
+  link is the first stop on every page.
+* Nothing tappable is under 44px on a touch screen (`sm` buttons and segments
+  grow on `pointer: coarse`); players' main controls are 48px+ (see Layout).
+* Radio groups (`ChoiceCards`, `Segmented`) get a name: `label`, `labelledBy`
+  or a `<fieldset>` with a `<legend>`. Dialogs are named by their title and
+  open on the title and description.
 * Every image has alt text or is decorative (`alt=""`); icon-only buttons have
   `aria-label`.
 * Color is never the only signal (status uses glyph + word).
 * Contrast AA at minimum; test Night-O too (`--dark` in scripts/shot.ts).
 * Loading: use `loading.tsx` skeletons that match the final layout for slow
-  routes; buttons show pending state.
+  routes — static mist blocks, no pulse or shimmer; buttons show pending state.

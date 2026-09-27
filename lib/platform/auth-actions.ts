@@ -1,10 +1,11 @@
 "use server";
 
+import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { type ActionState, fail, formToObject, parseForm } from "@/lib/actions";
 import { audit } from "@/lib/audit";
-import { requireUser } from "@/lib/auth/access";
+import { canCreateHunts, requireUser } from "@/lib/auth/access";
 import { hashPassword } from "@/lib/auth/password";
 import { signInUser, signOutUser } from "@/lib/auth/session";
 import {
@@ -18,7 +19,7 @@ import {
   verifyCredentials,
 } from "@/lib/auth/users";
 import { db } from "@/lib/db";
-import type { User } from "@/lib/db/schema";
+import { type User, users } from "@/lib/db/schema";
 import { formatDuration } from "@/lib/format";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { type AuthFormState, inviteProblemCopy } from "./invite-copy";
@@ -159,7 +160,10 @@ export async function signupAction(_prev: AuthFormState, formData: FormData): Pr
   let usedPlatformInvite = false;
   try {
     ({ user, accepted, usedPlatformInvite } = await db.transaction(async (tx) => {
-      const created = await insertUser({ name, email, passwordHash }, tx);
+      // Hunt invites make judges/co-organizers of that hunt only; open sign-up and
+      // platform invites make organizers who can create their own hunts.
+      const canCreateHunts = mode === "open" || (inviteUsable && !view?.invite.huntId);
+      const created = await insertUser({ name, email, passwordHash, canCreateHunts }, tx);
       let outcome: AcceptOutcome | null = null;
       let platformUse = false;
       if (view && inviteUsable) {
@@ -241,11 +245,30 @@ export async function acceptInviteAction(_prev: ActionState, formData: FormData)
   const user = await requireUser(`/invite/${token}`);
 
   const view = await getInviteView(token);
-  if (!view?.hunt) return fail(inviteProblemCopy("missing").body);
+  if (!view) return fail(inviteProblemCopy("missing").body);
   if (view.status !== "active") {
     return fail(
       inviteProblemCopy(view.status, { inviterName: view.inviterName, expiresAt: view.invite.expiresAt }).body,
     );
+  }
+
+  // Platform invite: lets an existing account (say, a judge) create its own hunts.
+  if (!view.hunt) {
+    if (canCreateHunts(user)) redirect("/dashboard/new");
+    const granted = await db.transaction(async (tx) => {
+      if (!(await consumeInvite(tx, view.invite.id))) return false;
+      await tx.update(users).set({ canCreateHunts: true }).where(eq(users.id, user.id));
+      return true;
+    });
+    if (!granted) return fail("This invite link was just used up or turned off. Ask for a new one.");
+    await audit({
+      huntId: null,
+      actorUserId: user.id,
+      action: "invite.accept_platform",
+      targetKind: "invite",
+      targetId: view.invite.id,
+    });
+    redirect("/dashboard/new");
   }
   // Platform admins already act as owner of every hunt; nothing to accept.
   if (user.isAdmin) redirect(`/manage/${view.hunt.id}`);

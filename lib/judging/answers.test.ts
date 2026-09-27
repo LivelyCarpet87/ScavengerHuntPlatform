@@ -186,12 +186,84 @@ describe("matchAnswer: regex", () => {
     expect(matchAnswer("a".repeat(MAX_ANSWER_INPUT), ["a+"], "regex")).toBe(true);
   });
 
-  test("patterns prone to catastrophic backtracking never match, and return quickly", () => {
-    const evil = `${"a".repeat(40)}!`;
+  test("patterns that backtrack badly in RegExp answer quickly, right or wrong", () => {
+    // Each of these takes seconds to hours in the built-in engine on a long near-miss.
+    const shapes = [
+      "a*a*a*a*a*a*b",
+      ".*.*.*.*.*.*x",
+      "(.*)(.*)(.*)(.*)(.*)x",
+      `${"a?".repeat(60)}b`,
+      "(a+)+b",
+      "(a|a)*b",
+      "(a|aa)*c",
+      "(\\w+\\s?)*!",
+      "((a*)*)*b",
+    ];
+    const nearMiss = "a".repeat(MAX_ANSWER_INPUT);
     const started = performance.now();
-    expect(matchAnswer(evil, ["(a+)+"], "regex")).toBe(false);
-    expect(matchAnswer(evil, ["(\\w+\\s?)*"], "regex")).toBe(false);
-    expect(performance.now() - started).toBeLessThan(200);
+    for (const pattern of shapes) {
+      expect(regexAnswerError(pattern)).toBeNull();
+      expect(matchAnswer(nearMiss, [pattern], "regex")).toBe(false);
+    }
+    expect(matchAnswer(`${"a".repeat(MAX_ANSWER_INPUT - 1)}b`, ["a*a*a*a*a*a*b"], "regex")).toBe(true);
+    expect(matchAnswer(`${"a".repeat(40)}!`, ["(\\w+\\s?)*!"], "regex")).toBe(true);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
+  test("even the largest allowed pattern checks a full-length answer quickly", () => {
+    const largest = "(?:.?){499}!";
+    expect(regexAnswerError(largest)).toBeNull();
+    const started = performance.now();
+    expect(matchAnswer("a".repeat(MAX_ANSWER_INPUT), [largest], "regex")).toBe(false);
+    expect(performance.now() - started).toBeLessThan(100);
+  });
+
+  test("matches like a case-insensitive RegExp for the whole answer", () => {
+    const patterns = [
+      "colou?r",
+      "(red|blue) door",
+      "19[0-9]{2}",
+      "(ab)+",
+      "[^abc]+",
+      "[\\d-z]+",
+      "\\bcat\\b",
+      "\\Bat",
+      "^a$|b",
+      "(?:ab|cd){2,3}",
+      "(?<first>ab)c",
+      "(|a)b",
+      "a{",
+      "x{,3}",
+      "]",
+      "\\$\\d+(\\.\\d\\d)?",
+      "[\\w.-]+@[\\w.-]+",
+      "\\s+",
+      "\\W",
+      "[^]",
+      "[]",
+      "caf[eé]",
+      "[à-ÿ]+",
+      "σ",
+      "[σ]",
+      "[ς]",
+      "ſ",
+      "[k]",
+      "(a|ab)(c|bcd)(d*)",
+    ];
+    const inputs = ["colour", "COLOR", "red door", "1987", "abab", "xyz", "09az", "-", "cat", "chat", "bat", "a", "b"];
+    inputs.push("ab", "cdcdab", "abc", "a{", "x{,3}", "]", "$12.50", "me@x.io", "\t", "!", "é", "Café", "ÀÉÎ");
+    inputs.push("Σ", "ς", "σ", "S", "s", "K", "\u212a", "abcd", "abcdd", "  spaced out ");
+    for (const pattern of patterns) {
+      expect(regexAnswerError(pattern)).toBeNull();
+      const builtIn = new RegExp(`^(?:${pattern})$`, "i");
+      for (const input of inputs) {
+        expect([pattern, input, matchAnswer(input, [pattern], "regex")]).toEqual([
+          pattern,
+          input,
+          builtIn.test(input.trim().normalize("NFC")),
+        ]);
+      }
+    }
   });
 
   test("never matches empty input, even with a pattern that allows it", () => {
@@ -221,21 +293,26 @@ describe("regexAnswerError", () => {
     expect(regexAnswerError("(abc")).toMatch(/valid regular expression/);
   });
 
-  test("flags nested repetition", () => {
-    expect(regexAnswerError("(a+)+")).toMatch(/too long to check/);
-    expect(regexAnswerError("(a*)*")).toMatch(/too long to check/);
-    expect(regexAnswerError("(\\w+\\s?)+")).toMatch(/too long to check/);
-    expect(regexAnswerError("(x{2,})+")).toMatch(/too long to check/);
-    expect(regexAnswerError("((a+)b)*")).toMatch(/too long to check/);
-    expect(regexAnswerError("([a-z]+)*")).toMatch(/too long to check/);
+  test("allows nested repetition, which is checked without backtracking", () => {
+    expect(regexAnswerError("(a+)+")).toBeNull();
+    expect(regexAnswerError("(\\w+\\s?)+")).toBeNull();
+    expect(regexAnswerError("(\\d|\\w)+x")).toBeNull();
+    expect(regexAnswerError("(a|b)*")).toBeNull();
   });
-});
 
-describe("catastrophic patterns", () => {
-  test("repeated groups with alternatives are refused", () => {
-    expect(regexAnswerError("(\\d|\\w)+x")).not.toBeNull();
-    expect(regexAnswerError("(a|b)*")).not.toBeNull();
-    expect(regexAnswerError("(colou?r|color)")).toBeNull();
-    expect(regexAnswerError("[ab]+")).toBeNull();
+  test("explains features the answer checker can't run", () => {
+    expect(regexAnswerError("(a)\\1")).toMatch(/Backreferences/);
+    expect(regexAnswerError("(?<n>a)\\k<n>")).toMatch(/Backreferences/);
+    expect(regexAnswerError("(?=a)a")).toMatch(/Lookarounds/);
+    expect(regexAnswerError("(?<!a)b")).toMatch(/Lookarounds/);
+    expect(regexAnswerError("\\p{L}+")).toMatch(/escape/);
+    expect(regexAnswerError("\\Aabc")).toMatch(/escape/);
+    expect(regexAnswerError("\\x4")).toMatch(/escape/);
+  });
+
+  test("refuses counted repeats too big to check quickly", () => {
+    expect(regexAnswerError("a{2000}")).toMatch(/too big/);
+    expect(regexAnswerError("(a{40}){40}")).toMatch(/too big/);
+    expect(regexAnswerError("[a-z]{1,40}")).toBeNull();
   });
 });

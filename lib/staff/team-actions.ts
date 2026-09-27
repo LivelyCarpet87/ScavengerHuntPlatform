@@ -15,6 +15,7 @@ import { deleteFiles } from "@/lib/storage";
 import { revalidateHunt, runBatch } from "./batch";
 import { isUniqueViolation, uniqueTeamCode } from "./codes";
 import { ownedFiles } from "./files";
+import { archivedError } from "./guards";
 import {
   cleanName,
   listSentence,
@@ -45,6 +46,8 @@ export async function addTeamsAction(
   const parsed = parseForm(AddTeamsSchema, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const list = parseTeamNames(parsed.data.names);
   if (list.names.length === 0 && list.tooLong.length === 0 && list.tooShort.length === 0) {
     return fail("Type at least one team name.", { names: "Type one team name per line." });
@@ -162,6 +165,8 @@ export async function updateTeamAction(_prev: ActionState, formData: FormData): 
   if (!parsed.ok) return parsed.state;
   const d = parsed.data;
   const { user, hunt } = await requireStaff(d.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const team = await loadTeam(hunt, d.teamId);
   if (!team) return fail("This team no longer exists. Someone may have deleted it.");
   if (d.emoji !== team.emoji && !TEAM_EMOJI.includes(d.emoji)) return fail("Pick one of the emoji shown.");
@@ -217,6 +222,8 @@ export async function regenerateTeamCodeAction(_prev: ActionState, formData: For
   const parsed = parseForm(TeamRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const team = await loadTeam(hunt, parsed.data.teamId);
   if (!team) return fail("This team no longer exists. Someone may have deleted it.");
   let code = await uniqueTeamCode(hunt.id);
@@ -253,6 +260,8 @@ export async function deleteTeamAction(_prev: ActionState, formData: FormData): 
   const parsed = parseForm(TeamRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const team = await loadTeam(hunt, parsed.data.teamId);
   if (!team) redirect(`/manage/${hunt.id}/teams`);
   const subs = await db
@@ -313,6 +322,8 @@ export async function renamePlayerAction(_prev: ActionState, formData: FormData)
   const parsed = parseForm(RenamePlayerSchema, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const player = await loadPlayer(hunt, parsed.data.playerId);
   if (!player) return fail("This player is no longer in the hunt.");
   const name = cleanName(parsed.data.name);
@@ -340,6 +351,8 @@ export async function movePlayerAction(_prev: ActionState, formData: FormData): 
   const parsed = parseForm(MovePlayerSchema, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const player = await loadPlayer(hunt, parsed.data.playerId);
   if (!player) return fail("This player is no longer in the hunt.");
   const target = await loadTeam(hunt, parsed.data.toTeamId);
@@ -383,6 +396,8 @@ export async function removePlayerAction(_prev: ActionState, formData: FormData)
   const parsed = parseForm(PlayerRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const player = await loadPlayer(hunt, parsed.data.playerId);
   if (!player) return ok("Removed.");
   await db.delete(players).where(and(eq(players.id, player.id), eq(players.huntId, hunt.id)));
@@ -404,6 +419,8 @@ export async function makeCaptainAction(_prev: ActionState, formData: FormData):
   const parsed = parseForm(PlayerRef, formData);
   if (!parsed.ok) return parsed.state;
   const { user, hunt } = await requireStaff(parsed.data.huntId, "organizer");
+  const archived = archivedError(hunt);
+  if (archived) return archived;
   const player = await loadPlayer(hunt, parsed.data.playerId);
   if (!player) return fail("This player is no longer in the hunt.");
   await runBatch([

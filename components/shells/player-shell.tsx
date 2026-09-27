@@ -32,7 +32,7 @@ export function PlayerShell({
     <div data-accent={hunt.accent} className="min-h-dvh bg-paper">
       <header className="sticky top-(--banner-h) z-40 border-b border-line bg-paper/92 pt-safe backdrop-blur">
         <div className="mx-auto flex h-14 max-w-3xl items-center gap-3 px-4">
-          <Link href={`/h/${hunt.slug}`} className="flex min-w-0 items-center gap-2.5">
+          <Link href={`/h/${hunt.slug}`} className="flex min-h-11 min-w-0 items-center gap-2.5">
             <StartMark size={20} />
             <span className="truncate font-cond text-lg font-extrabold tracking-tight">{hunt.name}</span>
           </Link>
@@ -42,14 +42,18 @@ export function PlayerShell({
               {phase === "live" && hunt.endsAt ? (
                 <HeaderClock slug={hunt.slug} endsAt={hunt.endsAt.getTime()} serverNow={now} />
               ) : null}
-              <Link href={`/h/${hunt.slug}/team`} aria-label={`Team ${team.name}`}>
+              <Link
+                href={`/h/${hunt.slug}/team`}
+                aria-label={`Team ${team.name}`}
+                className="-m-2 grid size-11 shrink-0 place-items-center rounded-full"
+              >
                 <TeamAvatar team={team} size="sm" />
               </Link>
             </div>
           ) : null}
         </div>
       </header>
-      <main className="mx-auto max-w-3xl px-4 pt-5 pb-28 md:pb-16">
+      <main id="main" tabIndex={-1} className="mx-auto max-w-3xl px-4 pt-5 pb-28 outline-none md:pb-16">
         {team ? <QueueFlusher huntId={hunt.id} slug={hunt.slug} /> : null}
         {children}
       </main>

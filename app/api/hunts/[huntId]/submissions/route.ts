@@ -3,19 +3,23 @@ import { z } from "zod";
 import { getPlayer } from "@/lib/auth/access";
 import { env } from "@/lib/env";
 import { getHuntById } from "@/lib/hunts";
-import { MAX_FILES, type SubmitFile, submitProof } from "@/lib/player/submit";
+import { MAX_FILES, type SubmitFailureCode, type SubmitFile, submitProof } from "@/lib/player/submit";
 
 /*
  * POST /api/hunts/[huntId]/submissions — a team sends proof for a task.
  * Contract (docs/ARCHITECTURE.md): multipart/form-data with taskId, clientId,
- * text?, files (0–4), poster?, lat?, lng?, accuracy?. The team comes from the
- * session cookie. Used by the task page (XMLHttpRequest, for upload progress)
- * and by the offline queue (pages and the service worker).
+ * text?, files (0–4), poster?, lat?, lng?, accuracy?, plus from the upload
+ * queue: queuedFor? (ms the proof waited on the phone for signal) and teamId?
+ * (the team it was made for). The team comes from the session cookie. Used by
+ * the task page (XMLHttpRequest, for upload progress) and by the offline queue
+ * (pages and the service worker).
  *
  *   200 { ok: true, duplicate?, submission: { id, status, feedback, points }, attemptsLeft, task }
- *   4xx { ok: false, error, retryable: false }  — don't retry as-is
- *   429 { ok: false, error, retryable: true }   — retry later (Retry-After)
- *   5xx                                         — retry later
+ *   4xx { ok: false, error, code?, retryable: false }  — don't retry as-is; `code` (SubmitFailureCode):
+ *         "already_completed" — the team already has this task, so there's nothing to send
+ *         "team_changed"      — the phone is on another team now; this can't be sent
+ *   429 { ok: false, error, retryable: true }          — retry later (Retry-After)
+ *   5xx                                                — retry later
  */
 
 // Four files at the per-file limit, plus room for the poster frame and form fields.
@@ -25,8 +29,12 @@ function reply(status: number, body: Record<string, unknown>, headers?: HeadersI
   return Response.json(body, { status, headers: { "Cache-Control": "no-store", ...headers } });
 }
 
-function refuse(status: number, error: string, headers?: HeadersInit): Response {
-  return reply(status, { ok: false, error, retryable: status === 429 || status >= 500 }, headers);
+function refuse(status: number, error: string, headers?: HeadersInit, code?: SubmitFailureCode): Response {
+  return reply(
+    status,
+    { ok: false, error, ...(code ? { code } : {}), retryable: status === 429 || status >= 500 },
+    headers,
+  );
 }
 
 /** Uploads must come from pages of this site (or its service worker). */
@@ -93,6 +101,9 @@ const Fields = z.object({
   lat: optionalNumber(-90, 90),
   lng: optionalNumber(-180, 180),
   accuracy: optionalNumber(0, 100_000),
+  // submitProof caps how much of the wait it believes.
+  queuedFor: optionalNumber(0, Number.MAX_SAFE_INTEGER),
+  teamId: z.string().trim().min(1).max(64).nullable().catch(null),
 });
 
 function fieldValue(form: FormData, name: string): string | null {
@@ -101,19 +112,21 @@ function fieldValue(form: FormData, name: string): string | null {
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ huntId: string }> }) {
+  // The submission's time: when it arrived, not when a slow upload finished.
+  const receivedAt = new Date();
   if (!isSameOrigin(req)) return refuse(403, "Uploads have to come from this site. Open the task page and try again.");
 
   const declared = Number(req.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
     return refuse(
       413,
-      `That's too much to send at once. Each file can be up to ${Math.round(env.maxUploadBytes / 1024 / 1024)} MB.`,
+      `That’s too much to send at once. Each file can be up to ${Math.round(env.maxUploadBytes / 1024 / 1024)} MB.`,
     );
   }
 
   const { huntId } = await ctx.params;
   const hunt = await getHuntById(huntId);
-  if (!hunt) return refuse(404, "This hunt doesn't exist.");
+  if (!hunt) return refuse(404, "This hunt doesn’t exist.");
   const me = await getPlayer(hunt.id);
   if (!me) return refuse(401, "Join the hunt first.");
 
@@ -128,10 +141,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ huntId: st
     if (err instanceof BodyTooLarge) {
       return refuse(
         413,
-        `That's too much to send at once. Each file can be up to ${Math.round(env.maxUploadBytes / 1024 / 1024)} MB.`,
+        `That’s too much to send at once. Each file can be up to ${Math.round(env.maxUploadBytes / 1024 / 1024)} MB.`,
       );
     }
-    return refuse(400, "The upload didn't arrive in one piece. Try sending it again.");
+    return refuse(400, "The upload didn’t arrive in one piece. Try sending it again.");
   }
 
   const parsed = Fields.safeParse({
@@ -141,9 +154,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ huntId: st
     lat: fieldValue(form, "lat"),
     lng: fieldValue(form, "lng"),
     accuracy: fieldValue(form, "accuracy"),
+    queuedFor: fieldValue(form, "queuedFor"),
+    teamId: fieldValue(form, "teamId"),
   });
   if (!parsed.success) return refuse(400, parsed.error.issues[0]?.message ?? "Check what you sent and try again.");
-  const { taskId, clientId, text, lat, lng, accuracy } = parsed.data;
+  const { taskId, clientId, text, lat, lng, accuracy, queuedFor, teamId } = parsed.data;
 
   const files: SubmitFile[] = [];
   for (const value of form.getAll("files")) {
@@ -166,12 +181,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ huntId: st
       lat: hasLocation ? lat : null,
       lng: hasLocation ? lng : null,
       accuracy: hasLocation ? accuracy : null,
+      receivedAt,
+      queuedForMs: queuedFor,
+      teamId,
     });
     if (!result.ok) {
       return refuse(
         result.status,
         result.error,
         result.retryAfterSec ? { "Retry-After": String(result.retryAfterSec) } : undefined,
+        result.code,
       );
     }
     return reply(200, result);

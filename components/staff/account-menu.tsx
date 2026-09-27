@@ -3,9 +3,13 @@
 import { ChevronDown, LayoutDashboard, LogOut, Shield } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import { signOutAction } from "@/lib/auth/actions";
+import { SignOutForm } from "@/components/auth/sign-out-form";
 
-/** The signed-in organizer's menu in the site header: who you are, admin, sign out. */
+/**
+ * The signed-in organizer's menu in the site header: who you are, admin, sign
+ * out. It closes on Esc, on a press outside it, and when keyboard focus moves
+ * on past it, so it never covers what has focus.
+ */
 export function AccountMenu({ name, email, isAdmin }: { name: string; email: string; isAdmin: boolean }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -23,11 +27,20 @@ export function AccountMenu({ name, email, isAdmin }: { name: string; email: str
         buttonRef.current?.focus();
       }
     };
+    // Tabbing past the last item: close, so the panel doesn't cover what has focus next.
+    // (Only when focus lands somewhere else: a click on the panel's own text moves it nowhere.)
+    const onFocusOut = (e: FocusEvent) => {
+      const next = e.relatedTarget;
+      if (next instanceof Node && !wrapRef.current?.contains(next)) setOpen(false);
+    };
+    const wrap = wrapRef.current;
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
+    wrap?.addEventListener("focusout", onFocusOut);
     return () => {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
+      wrap?.removeEventListener("focusout", onFocusOut);
     };
   }, [open]);
 
@@ -64,6 +77,7 @@ export function AccountMenu({ name, email, isAdmin }: { name: string; email: str
         <ChevronDown aria-hidden className={`size-4 text-ink-2 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open ? (
+        // A disclosure panel inside the header's "Account" navigation, so that names it.
         <div
           id={panelId}
           className="absolute top-full right-0 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg bg-raised p-2 shadow-pop animate-pop"
@@ -81,11 +95,11 @@ export function AccountMenu({ name, email, isAdmin }: { name: string; email: str
               <Shield aria-hidden /> Admin
             </Link>
           ) : null}
-          <form action={signOutAction}>
+          <SignOutForm>
             <button type="submit" className={item}>
               <LogOut aria-hidden /> Sign out
             </button>
-          </form>
+          </SignOutForm>
         </div>
       ) : null}
     </div>

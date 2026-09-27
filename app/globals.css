@@ -34,7 +34,8 @@
   --raised: #ffffff;
   --ink: #000000;
   --ink-2: #4f5358;
-  --ink-3: #72777c;
+  /* AA (4.5:1) on every Day surface, mist-2 and the washes included. */
+  --ink-3: #63686d;
   --line: #dfe1dc;
   --line-strong: #868b84;
 
@@ -88,7 +89,6 @@
     --water-wash: #0f2a3d;
     --danger: #ff6b7d;
     --danger-wash: #3d1519;
-    --danger-ink: #2a0509;
     --danger-ink: #2a0509;
     --contour: #9a6236;
 
@@ -349,6 +349,29 @@
   }
 }
 
+/*
+ * Bars pinned to the bottom of the screen would hide whatever keyboard focus
+ * scrolls to; scroll-padding-bottom keeps it above them. Mark the bar:
+ *   data-bottom-nav   the player tab bar (phones)
+ *   data-bottom-bar   a page's own pinned action bar, fixed or sticky (its
+ *                     room is kept at every width; harmless where it's hidden)
+ *   data-action-bar   the task page's action bar, above the tab bar (phones)
+ * Later rules are taller, so the tallest bar on a page wins.
+ */
+@media (max-width: 767px) {
+  :root:has([data-bottom-nav]) {
+    scroll-padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+}
+:root:has([data-bottom-bar]) {
+  scroll-padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+}
+@media (max-width: 767px) {
+  :root:has([data-action-bar]) {
+    scroll-padding-bottom: calc(10rem + env(safe-area-inset-bottom));
+  }
+}
+
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
@@ -372,6 +395,11 @@
   :focus-visible {
     outline: 3px solid var(--overprint);
     outline-offset: 2px;
+  }
+  /* Skip-link targets take focus only to move the reading position. */
+  main[tabindex="-1"]:focus,
+  h1[tabindex="-1"]:focus {
+    outline: none;
   }
   h1,
   h2,
