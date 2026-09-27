@@ -291,3 +291,87 @@ describe("totals and ranking", () => {
     expect(r.awards.b).toBeUndefined();
   });
 });
+
+describe("edge cases", () => {
+  test("a zero override still counts as a solve but not as scoring time", () => {
+    const r = computeStandings(
+      input({
+        tasks: [task("t1"), task("t2")],
+        submissions: [sub("a", "t1", min(1), { pointsOverride: 0 }), sub("a", "t2", min(9))],
+      }),
+    );
+    const s = byTeam(r);
+    expect(s.a.total).toBe(100);
+    expect(s.a.solved).toBe(2);
+    expect(s.a.lastScoredAt).toBe(min(9));
+  });
+
+  test("hidden teams never take contest places", () => {
+    const r = computeStandings(
+      input({
+        teams: [
+          { id: "a", name: "A", hidden: false },
+          { id: "z", name: "Z", hidden: true },
+        ],
+        tasks: [task("k", { kind: "contest", contestPlaces: 1, points: 100, minPoints: 100 })],
+        submissions: [sub("z", "k", min(1), { contestValue: 999 }), sub("a", "k", min(2), { contestValue: 5 })],
+      }),
+    );
+    expect(byTeam(r).a.contestPoints).toBe(100);
+    expect(byTeam(r).z.contestPoints).toBe(0);
+  });
+
+  test("submissions for unknown teams or tasks are ignored", () => {
+    const r = computeStandings(
+      input({ tasks: [task("t1")], submissions: [sub("ghost", "t1", min(1)), sub("a", "missing", min(1))] }),
+    );
+    expect(r.standings.every((s) => s.total === 0)).toBe(true);
+    expect(r.tasks.t1.solves).toBe(0);
+  });
+
+  test("negative totals rank below teams with zero", () => {
+    const r = computeStandings(input({ adjustments: [{ teamId: "c", points: -5, at: min(1) }] }));
+    expect(r.standings.at(-1)?.teamId).toBe("c");
+    expect(byTeam(r).c.rank).toBe(3);
+  });
+
+  test("equal totals reached at the same moment share a rank", () => {
+    const r = computeStandings(
+      input({ tasks: [task("t1")], submissions: [sub("a", "t1", min(3)), sub("b", "t1", min(3))] }),
+    );
+    expect(byTeam(r).a.rank).toBe(1);
+    expect(byTeam(r).b.rank).toBe(1);
+    expect(byTeam(r).c.rank).toBe(3);
+  });
+
+  test("rarity value is shared even when solves arrive out of judging order", () => {
+    const t = task("t1", { scoring: "rarity", points: 90, minPoints: 30, decaySolves: 4 });
+    const r = computeStandings(
+      input({
+        tasks: [t],
+        submissions: [sub("a", "t1", min(5), { judgedAt: min(1) }), sub("b", "t1", min(2), { judgedAt: min(9) })],
+      }),
+    );
+    expect(byTeam(r).a.total).toBe(byTeam(r).b.total);
+    expect(byTeam(r).a.total).toBe(decayValue(2, 90, 30, 4));
+  });
+
+  test("contest 'total' sums every approved entry of a team", () => {
+    const k = task("k", { kind: "contest", contestRank: "total", contestPlaces: 2, points: 50, minPoints: 10 });
+    const r = computeStandings(
+      input({
+        tasks: [k],
+        submissions: [
+          sub("a", "k", min(1), { contestValue: 3 }),
+          sub("a", "k", min(2), { contestValue: 4 }),
+          sub("b", "k", min(3), { contestValue: 6 }),
+          sub("b", "k", min(4), { contestValue: 9, status: "rejected" }),
+        ],
+      }),
+    );
+    expect(r.tasks.k.contest?.map((e) => [e.teamId, e.value, e.points])).toEqual([
+      ["a", 7, 50],
+      ["b", 6, 10],
+    ]);
+  });
+});
