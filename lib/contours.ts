@@ -91,3 +91,28 @@ function ringToPath(ring: [number, number][]): string {
   const r = (n: number) => Math.round(n * 10) / 10;
   return `M${ring.map(([x, y]) => `${r(x)} ${r(y)}`).join("L")}Z`;
 }
+
+const svgCache = new Map<string, string>();
+
+/**
+ * The terrain as a standalone SVG document (black lines on transparent), served
+ * by /terrain/[seed] and used as a CSS mask by <ContourArt>, so pages carry a
+ * cacheable URL instead of hundreds of kilobytes of inline path data.
+ */
+export function contourSvg(seed: string): string {
+  const hit = svgCache.get(seed);
+  if (hit) return hit;
+  const map = contourMap(seed);
+  const [, , w, h] = map.viewBox.split(" ").map(Number);
+  const paths = map.paths.map((p) => `<path d="${p.d}" stroke-width="${p.index ? 1.6 : 0.8}"/>`).join("");
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${map.viewBox}" width="${w * 10}" height="${h * 10}" preserveAspectRatio="xMidYMid slice">` +
+    `<style>path{fill:none;stroke:#000;stroke-linejoin:round;vector-effect:non-scaling-stroke}</style>${paths}</svg>`;
+  if (svgCache.size > 500) svgCache.clear();
+  svgCache.set(seed, svg);
+  return svg;
+}
+
+export function isTerrainCached(seed: string): boolean {
+  return svgCache.has(seed);
+}

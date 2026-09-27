@@ -1,10 +1,16 @@
-import { contourMap } from "@/lib/contours";
 import { cn } from "@/lib/utils";
+
+/** Bump when the terrain algorithm in lib/contours.ts changes, so browsers fetch the new art. */
+const TERRAIN_VERSION = "1";
 
 /**
  * A hunt's generated terrain: topographic contour lines seeded by the hunt id.
- * Decorative — absolutely fill the parent (which should be `relative`).
- * Server component: the SVG is computed once and cached.
+ * Decorative — absolutely fills the parent (which should be `relative`).
+ *
+ * The lines come from /terrain/[seed] (an SVG cached forever) used as a CSS
+ * mask over the theme's contour color, so a page carries a URL instead of the
+ * path data, the art is cached across pages, and it still follows Day and
+ * Night-O. Tint it with a text-* class.
  */
 export function ContourArt({
   seed,
@@ -16,28 +22,26 @@ export function ContourArt({
   /** "faint" for behind text, "normal" for headers, "bold" for empty/hero areas. */
   strength?: "faint" | "normal" | "bold";
 }) {
-  const map = contourMap(seed);
+  const url = `url("/terrain/${encodeURIComponent(seed)}?v=${TERRAIN_VERSION}")`;
   const opacity = strength === "faint" ? 0.22 : strength === "bold" ? 0.7 : 0.45;
   return (
-    <svg
+    <span
       aria-hidden
-      viewBox={map.viewBox}
-      preserveAspectRatio="xMidYMid slice"
-      className={cn("pointer-events-none absolute inset-0 size-full text-contour", className)}
-      style={{ opacity }}
-    >
-      {map.paths.map((p, i) => (
-        <path
-          // biome-ignore lint/suspicious/noArrayIndexKey: static generated art
-          key={i}
-          d={p.d}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={p.index ? 1.6 : 0.8}
-          vectorEffect="non-scaling-stroke"
-          strokeLinejoin="round"
-        />
-      ))}
-    </svg>
+      className={cn("pointer-events-none absolute inset-0 block size-full bg-current text-contour", className)}
+      style={{
+        opacity,
+        maskImage: url,
+        WebkitMaskImage: url,
+        maskSize: "cover",
+        WebkitMaskSize: "cover",
+        maskPosition: "center",
+        WebkitMaskPosition: "center",
+        maskRepeat: "no-repeat",
+        WebkitMaskRepeat: "no-repeat",
+        // Printed posters keep their terrain even with "background graphics" off.
+        printColorAdjust: "exact",
+        WebkitPrintColorAdjust: "exact",
+      }}
+    />
   );
 }
