@@ -30,6 +30,17 @@ export function rateLimit(key: string, limit: number, windowMs: number): { ok: b
   return { ok: true, retryAfterSec: 0 };
 }
 
+/**
+ * Checks a limit without counting this call — for limits that should only
+ * count failures (e.g. wrong codes): peek first, then call rateLimit() on a miss.
+ */
+export function peekRateLimit(key: string, limit: number): { ok: boolean; retryAfterSec: number } {
+  const now = Date.now();
+  const bucket = buckets.get(key);
+  if (!bucket || bucket.resetAt <= now || bucket.count < limit) return { ok: true, retryAfterSec: 0 };
+  return { ok: false, retryAfterSec: Math.ceil((bucket.resetAt - now) / 1000) };
+}
+
 /** Best-effort client IP (first X-Forwarded-For hop when behind a proxy). */
 export async function clientIp(): Promise<string> {
   const h = await headers();
