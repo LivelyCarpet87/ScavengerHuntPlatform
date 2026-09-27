@@ -36,10 +36,12 @@ export function DateTimeField({
 }) {
   const id = useId();
   const [local, setLocal] = useState("");
+  const [zone, setZone] = useState("");
   // Local time is only known in the browser; fill after mount.
   useEffect(() => setLocal(toLocalInput(defaultValue)), [defaultValue]);
+  // So is the zone: computed during render, the hint showed the server's zone (hydration keeps server text).
+  useEffect(() => setZone(Intl.DateTimeFormat().resolvedOptions().timeZone), []);
   const iso = local ? new Date(local).toISOString() : "";
-  const zone = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
