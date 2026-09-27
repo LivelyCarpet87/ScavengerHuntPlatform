@@ -1,9 +1,10 @@
 /**
  * Shared setup for the end-to-end smoke tests (bun test + Playwright).
  *
- * They drive a running server with seeded demo data:
+ * They drive a running server with seeded demo data (files are named *.e2e.ts so a plain
+ * `bun test` skips them):
  *   bun run db:seed --reset && bun run dev      # or: bun run build && bun run start
- *   E2E_BASE_URL=http://localhost:3000 bun test e2e
+ *   E2E_BASE_URL=http://localhost:3000 bun run e2e
  *
  * Demo device sessions (scripts/seed.ts): dev-admin, dev-judge, dev-player-1 … dev-player-5.
  */

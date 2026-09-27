@@ -14,7 +14,12 @@ import type { SubmissionStatus } from "@/lib/db/schema";
  */
 
 /** Display fields a publisher may attach; all optional. */
-type Display = { teamName?: string; taskTitle?: string; taskCode?: number };
+type Display = {
+  teamName?: string;
+  taskTitle?: string;
+  taskCode?: number;
+  taskKind?: "media" | "answer" | "checkpoint" | "contest";
+};
 
 export type HuntEvent =
   | ({ type: "submission.created"; submissionId: string; teamId: string; taskId: string } & Display)
@@ -36,7 +41,13 @@ export type HuntEvent =
 
 export type HuntEventType = HuntEvent["type"];
 
-export type HuntEventEnvelope = HuntEvent & { huntId: string; seq: number; at: number };
+export type HuntEventEnvelope = HuntEvent & {
+  huntId: string;
+  seq: number;
+  at: number;
+  /** "staff": delivered to hunt staff only (e.g. a decision still inside its undo window). */
+  audience?: "staff";
+};
 
 type Listener = (event: HuntEventEnvelope) => void;
 
@@ -60,11 +71,15 @@ export function subscribe(huntId: string, listener: Listener): () => void {
   };
 }
 
-/** Broadcast an event to everyone watching the hunt and invalidate cached standings. */
-export function publish(huntId: string, event: HuntEvent): void {
+/**
+ * Broadcast an event to everyone watching the hunt (or only its staff) and
+ * invalidate cached standings.
+ */
+export function publish(huntId: string, event: HuntEvent, opts: { audience?: "staff" } = {}): void {
   bus.versions.set(huntId, (bus.versions.get(huntId) ?? 0) + 1);
   bus.seq += 1;
   const envelope: HuntEventEnvelope = { ...event, huntId, seq: bus.seq, at: Date.now() };
+  if (opts.audience) envelope.audience = opts.audience;
   const set = bus.listeners.get(huntId);
   if (!set) return;
   for (const listener of set) {

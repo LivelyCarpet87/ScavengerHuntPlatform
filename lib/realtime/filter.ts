@@ -10,6 +10,7 @@ export type EventViewer = { staff: boolean; teamId: string | null };
  */
 export function eventForViewer(e: HuntEventEnvelope, viewer: EventViewer): HuntEventEnvelope | null {
   if (viewer.staff) return e;
+  if (e.audience === "staff") return null;
   const base = { huntId: e.huntId, seq: e.seq, at: e.at };
   const scoresChanged = (): HuntEventEnvelope => ({ ...base, type: "scores.changed" });
   switch (e.type) {

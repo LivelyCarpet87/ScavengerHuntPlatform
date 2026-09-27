@@ -97,8 +97,8 @@ export function StaffShell({
   children: ReactNode;
 }) {
   return (
-    <div data-accent={hunt.accent} className="min-h-dvh md:grid md:grid-cols-[16rem_minmax(0,1fr)]">
-      <aside className="sticky top-0 hidden h-dvh flex-col border-r border-line bg-mist px-3 py-4 md:flex">
+    <div data-accent={hunt.accent} className="min-h-dvh md:grid md:grid-cols-[16rem_minmax(0,1fr)] print:block">
+      <aside className="sticky top-(--banner-h) hidden h-[calc(100dvh-var(--banner-h))] flex-col border-r border-line bg-mist px-3 py-4 md:flex print:hidden">
         <Link
           href="/dashboard"
           className="flex items-center gap-2 px-3 text-sm font-semibold text-ink-2 hover:text-ink"
@@ -117,7 +117,7 @@ export function StaffShell({
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-40 flex h-14 items-center gap-2 border-b border-line bg-paper/95 px-2 pt-safe backdrop-blur md:hidden">
+        <header className="sticky top-(--banner-h) z-40 flex h-14 items-center gap-2 border-b border-line bg-paper/95 px-2 pt-safe backdrop-blur md:hidden print:hidden">
           <Link
             href="/dashboard"
             className="grid size-11 place-items-center rounded-md hover:bg-mist"
@@ -136,7 +136,9 @@ export function StaffShell({
             footer={<ShellFooter hunt={hunt} user={user} />}
           />
         </header>
-        <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8">{children}</main>
+        <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8 md:py-8 print:max-w-none print:p-0">
+          {children}
+        </main>
         <StaffLive huntId={hunt.id} />
       </div>
     </div>

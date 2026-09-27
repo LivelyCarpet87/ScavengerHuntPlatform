@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { getPlayer, getStaffRole } from "@/lib/auth/access";
 import { db } from "@/lib/db";
 import { type FileRow, submissions, tasks } from "@/lib/db/schema";
-import { canViewGallery, getHuntById, huntPhase, isTaskVisible } from "@/lib/hunts";
+import { canViewGallery, getHuntById, huntPhase, isTaskVisible, scoreboardCutoff } from "@/lib/hunts";
 
 /**
  * Who may fetch an uploaded file:
@@ -35,14 +35,23 @@ export async function canViewFile(file: FileRow): Promise<boolean> {
     }
     case "submission": {
       const sub = await db
-        .select({ teamId: submissions.teamId, status: submissions.status })
+        .select({
+          teamId: submissions.teamId,
+          status: submissions.status,
+          createdAt: submissions.createdAt,
+          judgedAt: submissions.judgedAt,
+        })
         .from(submissions)
         .where(eq(submissions.id, file.ownerId))
         .get();
       if (!sub) return false;
       const me = await getPlayer(hunt.id);
       if (me && me.team.id === sub.teamId) return true;
-      return sub.status === "approved" && canViewGallery(hunt, { isStaff: false, isPlayer: !!me });
+      const viewer = { isStaff: false, isPlayer: !!me };
+      if (sub.status !== "approved" || !canViewGallery(hunt, viewer)) return false;
+      // While the scoreboard is frozen, a newly accepted photo would give away a score.
+      const cutoff = scoreboardCutoff(hunt, viewer);
+      return !cutoff || (sub.createdAt <= cutoff && (!sub.judgedAt || sub.judgedAt <= cutoff));
     }
   }
 }

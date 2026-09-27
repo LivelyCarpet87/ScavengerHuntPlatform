@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { punchPattern } from "@/lib/punch";
 import { cn } from "@/lib/utils";
 import type { ControlState } from "./control";
@@ -99,9 +100,9 @@ export function ControlCard({ cells, className }: { cells: CardCell[]; className
         return (
           <li key={cell.id}>
             {cell.href ? (
-              <a href={cell.href} className={box} title={cell.title}>
+              <Link href={cell.href} className={box} title={cell.title}>
                 {inner}
-              </a>
+              </Link>
             ) : (
               <div className={box} title={cell.title}>
                 {inner}

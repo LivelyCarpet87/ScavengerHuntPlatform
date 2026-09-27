@@ -38,12 +38,12 @@ function kindOf(mime: string): UploadKind | null {
 }
 
 function fileDir(file: Pick<FileRow, "id" | "huntId">): string {
-  return path.join(env.uploadsDir, file.huntId ?? "_platform", file.id);
+  return path.join(/*turbopackIgnore: true*/ env.uploadsDir, file.huntId ?? "_platform", file.id);
 }
 
 export function variantPath(file: Pick<FileRow, "id" | "huntId" | "ext">, variant: Variant): string {
   const name = variant === "original" ? `original.${file.ext}` : `${variant}.webp`;
-  return path.join(fileDir(file), name);
+  return path.join(/*turbopackIgnore: true*/ fileDir(file), name);
 }
 
 /** URL for a file variant; falls back to the original when the variant wasn't generated. */
@@ -183,7 +183,7 @@ export async function deleteFiles(rows: Pick<FileRow, "id" | "huntId">[]): Promi
 
 /** Removes every stored byte for a hunt (rows are removed by the hunt's cascade). */
 export async function deleteHuntStorage(huntId: string): Promise<void> {
-  await fsp.rm(path.join(env.uploadsDir, huntId), { recursive: true, force: true });
+  await fsp.rm(path.join(/*turbopackIgnore: true*/ env.uploadsDir, huntId), { recursive: true, force: true });
 }
 
 export function fileExists(p: string): boolean {

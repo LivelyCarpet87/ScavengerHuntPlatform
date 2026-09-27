@@ -130,6 +130,11 @@
  * Hunt accents. Hunt pages set data-accent="…" on a wrapper; everything inside
  * uses --accent for primary actions. Defaults to the overprint purple.
  */
+[data-accent="overprint"] {
+  --accent: var(--overprint);
+  --accent-ink: var(--overprint-ink);
+  --accent-wash: var(--overprint-wash);
+}
 [data-accent="water"] {
   --accent: #0068ad;
   --accent-ink: #ffffff;
@@ -325,11 +330,32 @@
   padding-top: env(safe-area-inset-top);
 }
 
+/*
+ * Layout offsets shared by fixed and sticky chrome:
+ *   --banner-h      height of the offline banner while it shows; sticky headers sit below it
+ *   --toast-offset  distance of toasts from the bottom on phones; grows while a pinned
+ *                   action bar (data-action-bar) sits above the tab bar
+ */
+:root {
+  --banner-h: 0px;
+  --toast-offset: 5.5rem;
+}
+:root:has([data-offline-banner]) {
+  --banner-h: calc(2.25rem + env(safe-area-inset-top));
+}
+@media (max-width: 767px) {
+  :root:has([data-action-bar]) {
+    --toast-offset: 10.5rem;
+  }
+}
+
 @layer base {
   html {
     -webkit-tap-highlight-color: transparent;
     text-size-adjust: 100%;
     background: var(--paper);
+    /* In-page jumps and focus scrolling land below the sticky header. */
+    scroll-padding-top: calc(4.5rem + var(--banner-h));
   }
   body {
     background: var(--paper);

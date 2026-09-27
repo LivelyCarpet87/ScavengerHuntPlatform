@@ -1,4 +1,0 @@
-[test]
-# Unit tests live next to the code under lib/. End-to-end tests (e2e/) need a
-# running server and are run separately with `bun run e2e`.
-root = "./lib"
