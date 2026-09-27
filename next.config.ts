@@ -22,6 +22,9 @@ const nextConfig: NextConfig = {
     // Navigations and Server Actions wait for connectivity instead of failing —
     // hunts happen outdoors on patchy mobile data.
     useOffline: true,
+    // Low-memory dev machines (e.g. running several tools at once): evict
+    // Turbopack's cache from memory after every snapshot to disk.
+    turbopackMemoryEviction: process.env.NEXT_LOW_MEMORY ? "full" : "auto",
   },
   async headers() {
     return [
