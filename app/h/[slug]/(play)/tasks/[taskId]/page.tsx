@@ -211,7 +211,7 @@ function RejectedNotice({
       <div className="flex items-start gap-3">
         <StatusGlyph status="rejected" className="mt-1 size-4 text-danger" />
         <div className="min-w-0">
-          <p className="font-semibold">{open ? "Not accepted — try again" : "Not accepted"}</p>
+          <p className="font-semibold">{open ? "Not accepted. Try again" : "Not accepted"}</p>
           {sub.feedback ? (
             <p className="mt-1 text-ink">
               <span className="font-semibold">The judge says: </span>

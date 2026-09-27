@@ -58,7 +58,7 @@ export async function HuntIntro({
           <Notice
             tone="warning"
             icon={<FilePenLine className="size-4" />}
-            title="Draft — only staff can see this page."
+            title="This hunt is a draft. Only staff can see this page."
           >
             Publish it from the organizer view.{" "}
             <Link href={links.manage(hunt.id)} className="font-semibold text-ink underline underline-offset-2">

@@ -10,6 +10,19 @@ The interface borrows from orienteering's Score-O format — controls on a map,
 visited in any order, each worth points — so tasks are controls, a team's
 progress is a punched control card, and the scoreboard is a race bib.
 
+![Players on their phones: entering the hunt code, the team dashboard, a punched task and the scoreboard](docs/screenshots/players.png)
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/judging-queue.png" alt="The judging queue: submissions oldest first, the photo, and approve or reject with live scoring"></td>
+<td width="50%"><img src="docs/screenshots/big-screen.png" alt="The big screen for the room: live standings, a photo wall and the join code"></td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/dashboard.png" alt="The organizer dashboard: every hunt as its own map"></td>
+<td><img src="docs/screenshots/task-editor.png" alt="The task editor"></td>
+</tr>
+</table>
+
 ## What it does
 
 **For organizers.** Create hunts — several can run at the same time — with a

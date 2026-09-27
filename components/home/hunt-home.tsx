@@ -226,10 +226,12 @@ export async function HuntHome({
                 <p className="flex items-center gap-2.5 pt-1 text-sm text-ink-2">
                   <Hourglass aria-hidden className="size-4 shrink-0" />
                   <span>
-                    {huntTasks.later.count === 1
-                      ? "1 more task unlocks later"
-                      : `${huntTasks.later.count} more tasks unlock later`}
-                    {huntTasks.later.nextAt ? ` — next at ${unlockTime(huntTasks.later.nextAt, nowDate, tz)}` : ""}
+                    {huntTasks.later.count === 1 ? "1 more task unlocks" : `${huntTasks.later.count} more tasks unlock`}
+                    {huntTasks.later.nextAt
+                      ? huntTasks.later.count === 1
+                        ? ` at ${unlockTime(huntTasks.later.nextAt, nowDate, tz)}`
+                        : `, the next at ${unlockTime(huntTasks.later.nextAt, nowDate, tz)}`
+                      : " later"}
                   </span>
                 </p>
               ) : null}

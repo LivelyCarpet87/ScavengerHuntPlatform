@@ -139,7 +139,7 @@ export function TaskActionArea(props: TaskActionAreaProps) {
               tabIndex={-1}
               className="font-cond text-2xl font-extrabold tracking-tight outline-none"
             >
-              {punchedAt ? `Done — punched at ${punchedAt}` : "Done — punched"}
+              {punchedAt ? `Punched at ${punchedAt}` : "Punched"}
             </p>
             {punched ? (
               <p className="mt-1 flex flex-wrap items-baseline gap-x-2 text-ink">
