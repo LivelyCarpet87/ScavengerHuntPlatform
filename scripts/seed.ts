@@ -3,6 +3,7 @@
  *
  *   bun run db:seed            # add demo data (skips if the demo admin exists)
  *   bun run db:seed --reset    # wipe every table and uploads first
+ *   bun run db:seed --reset --hours 6   # …and keep the live hunt running for 6 hours
  *
  * Accounts (password in parentheses):
  *   admin@example.com (hunt-admin)   platform admin, owner of every demo hunt
@@ -24,6 +25,10 @@ import { newCode, newId } from "../lib/ids";
 import { storeUpload } from "../lib/storage";
 
 const reset = process.argv.includes("--reset");
+// --hours N keeps the live demo hunt running for N more hours (default 55 minutes),
+// e.g. for long QA sessions.
+const hoursArg = process.argv.indexOf("--hours");
+const LIVE_MINUTES_LEFT = hoursArg > 0 ? Math.max(1, Number(process.argv[hoursArg + 1]) * 60 || 55) : 55;
 const MIN = 60_000;
 const now = Date.now();
 const at = (offsetMin: number) => new Date(now + offsetMin * MIN);
@@ -138,8 +143,8 @@ async function main() {
         "Meet at the **main fountain** at 19:00 for the briefing.\n\n- Stay together: photos need at least three of you in frame\n- No running inside buildings\n- Checkpoint QR codes are posted at eye level — leave them where they are\n\nStuck? Hints cost points, but they’re cheaper than wandering.",
       joinCode: "482913",
       startsAt: at(-95),
-      endsAt: at(55),
-      freezeAt: at(40),
+      endsAt: at(LIVE_MINUTES_LEFT),
+      freezeAt: at(LIVE_MINUTES_LEFT - 15),
       scoreboardVisibility: "public",
       galleryMode: "live",
       accent: "overprint",
