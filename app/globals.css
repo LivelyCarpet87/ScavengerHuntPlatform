@@ -1,0 +1,432 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — see docs/DESIGN.md.
+ *
+ * The palette is the orienteering map (ISOM): white paper, black ink, contour
+ * brown, open-land yellow, vegetation green, water blue — and the purple
+ * course overprint, the only loud color, reserved for the course itself
+ * (controls, primary actions, "you are here").
+ *
+ * Components use semantic tokens (bg-paper, text-ink, border-line, bg-accent…)
+ * which switch automatically between Day and Night-O (dark). Avoid `dark:`
+ * utilities and raw hex values in components.
+ */
+
+@custom-variant dark {
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* Day — map paper */
+  --paper: #ffffff;
+  --mist: #f2f3f0;
+  --mist-2: #e7e9e4;
+  --raised: #ffffff;
+  --ink: #000000;
+  --ink-2: #4f5358;
+  /* AA (4.5:1) on every Day surface, mist-2 and the washes included. */
+  --ink-3: #63686d;
+  --line: #dfe1dc;
+  --line-strong: #868b84;
+
+  --overprint: #a3129b;
+  --overprint-ink: #ffffff;
+  --overprint-wash: #f9e7f7;
+  --sun: #ffc21a;
+  --sun-ink: #1a1300;
+  --sun-wash: #fff4cc;
+  /* Text and icons on sun-wash (e.g. "In review"). */
+  --sun-fg: #7d5800;
+  --forest: #1b7a3e;
+  --forest-wash: #e2f2e7;
+  --water: #0068ad;
+  --water-wash: #e1effa;
+  --danger: #c4152f;
+  --danger-wash: #fce7ea;
+  --danger-ink: #ffffff;
+  --contour: #c36a2d;
+
+  --accent: var(--overprint);
+  --accent-ink: var(--overprint-ink);
+  --accent-wash: var(--overprint-wash);
+
+  --shadow-pop: 0 18px 40px -16px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(0 0 0 / 0.06);
+}
+
+/* Night-O — named for night orienteering */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0f1215;
+    --mist: #171b20;
+    --mist-2: #20252b;
+    --raised: #1a1f25;
+    --ink: #f4f4f2;
+    --ink-2: #b3b9c0;
+    --ink-3: #8a9199;
+    --line: #2a3038;
+    --line-strong: #626c79;
+
+    --overprint: #e46bdc;
+    --overprint-ink: #1b0719;
+    --overprint-wash: #3a1537;
+    --sun: #ffd34d;
+    --sun-ink: #1a1300;
+    --sun-wash: #3a3212;
+    --sun-fg: #ffd34d;
+    --forest: #52c77c;
+    --forest-wash: #143321;
+    --water: #5bb8f5;
+    --water-wash: #0f2a3d;
+    --danger: #ff6b7d;
+    --danger-wash: #3d1519;
+    --danger-ink: #2a0509;
+    --contour: #9a6236;
+
+    --shadow-pop: 0 18px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #0f1215;
+  --mist: #171b20;
+  --mist-2: #20252b;
+  --raised: #1a1f25;
+  --ink: #f4f4f2;
+  --ink-2: #b3b9c0;
+  --ink-3: #8a9199;
+  --line: #2a3038;
+  --line-strong: #626c79;
+
+  --overprint: #e46bdc;
+  --overprint-ink: #1b0719;
+  --overprint-wash: #3a1537;
+  --sun: #ffd34d;
+  --sun-ink: #1a1300;
+  --sun-wash: #3a3212;
+  --sun-fg: #ffd34d;
+  --forest: #52c77c;
+  --forest-wash: #143321;
+  --water: #5bb8f5;
+  --water-wash: #0f2a3d;
+  --danger: #ff6b7d;
+  --danger-wash: #3d1519;
+  --danger-ink: #2a0509;
+  --contour: #9a6236;
+
+  --shadow-pop: 0 18px 40px -12px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+/*
+ * Hunt accents. Hunt pages set data-accent="…" on a wrapper; everything inside
+ * uses --accent for primary actions. Defaults to the overprint purple.
+ */
+[data-accent="overprint"] {
+  --accent: var(--overprint);
+  --accent-ink: var(--overprint-ink);
+  --accent-wash: var(--overprint-wash);
+}
+[data-accent="water"] {
+  --accent: #0068ad;
+  --accent-ink: #ffffff;
+  --accent-wash: #e1effa;
+}
+[data-accent="forest"] {
+  --accent: #1b7a3e;
+  --accent-ink: #ffffff;
+  --accent-wash: #e2f2e7;
+}
+[data-accent="contour"] {
+  --accent: #a64b12;
+  --accent-ink: #ffffff;
+  --accent-wash: #f8e9de;
+}
+[data-accent="sun"] {
+  /* Open-land gold: dark enough to read as text on paper by day, yellow at night. */
+  --accent: #8f6500;
+  --accent-ink: #ffffff;
+  --accent-wash: #fff4cc;
+}
+[data-accent="ink"] {
+  --accent: #16161a;
+  --accent-ink: #ffffff;
+  --accent-wash: #ecedee;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-accent="water"] {
+    --accent: #5bb8f5;
+    --accent-ink: #04192a;
+    --accent-wash: #0f2a3d;
+  }
+  :root:not([data-theme="light"]) [data-accent="forest"] {
+    --accent: #52c77c;
+    --accent-ink: #062112;
+    --accent-wash: #143321;
+  }
+  :root:not([data-theme="light"]) [data-accent="contour"] {
+    --accent: #e8955a;
+    --accent-ink: #2a1203;
+    --accent-wash: #3a2314;
+  }
+  :root:not([data-theme="light"]) [data-accent="sun"] {
+    --accent: #ffd34d;
+    --accent-ink: #1a1300;
+    --accent-wash: #3a3212;
+  }
+  :root:not([data-theme="light"]) [data-accent="ink"] {
+    --accent: #f2f2f4;
+    --accent-ink: #0f1215;
+    --accent-wash: #2a3038;
+  }
+}
+:root[data-theme="dark"] [data-accent="water"] {
+  --accent: #5bb8f5;
+  --accent-ink: #04192a;
+  --accent-wash: #0f2a3d;
+}
+:root[data-theme="dark"] [data-accent="forest"] {
+  --accent: #52c77c;
+  --accent-ink: #062112;
+  --accent-wash: #143321;
+}
+:root[data-theme="dark"] [data-accent="contour"] {
+  --accent: #e8955a;
+  --accent-ink: #2a1203;
+  --accent-wash: #3a2314;
+}
+:root[data-theme="dark"] [data-accent="sun"] {
+  --accent: #ffd34d;
+  --accent-ink: #1a1300;
+  --accent-wash: #3a3212;
+}
+:root[data-theme="dark"] [data-accent="ink"] {
+  --accent: #f2f2f4;
+  --accent-ink: #0f1215;
+  --accent-wash: #2a3038;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-mist: var(--mist);
+  --color-mist-2: var(--mist-2);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-overprint: var(--overprint);
+  --color-overprint-ink: var(--overprint-ink);
+  --color-overprint-wash: var(--overprint-wash);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+  --color-sun: var(--sun);
+  --color-sun-ink: var(--sun-ink);
+  --color-sun-wash: var(--sun-wash);
+  --color-sun-fg: var(--sun-fg);
+  --color-forest: var(--forest);
+  --color-forest-wash: var(--forest-wash);
+  --color-water: var(--water);
+  --color-water-wash: var(--water-wash);
+  --color-danger: var(--danger);
+  --color-danger-wash: var(--danger-wash);
+  --color-danger-ink: var(--danger-ink);
+  --color-contour: var(--contour);
+
+  --font-sans: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+
+  --shadow-pop: var(--shadow-pop);
+}
+
+@theme {
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Type scale after Bringhurst: 12 14 16 18 21 24 30 36 48 60 72 96 */
+  --text-xl: 1.3125rem;
+  --text-xl--line-height: 1.3;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 1.05;
+  --text-5xl: 3rem;
+  --text-5xl--line-height: 1;
+  --text-6xl: 3.75rem;
+  --text-6xl--line-height: 0.95;
+  --text-7xl: 4.5rem;
+  --text-7xl--line-height: 0.92;
+  --text-8xl: 6rem;
+  --text-8xl--line-height: 0.9;
+
+  --animate-punch: punch-in 420ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  --animate-pop: pop-in 220ms cubic-bezier(0.2, 1.2, 0.4, 1) both;
+  --animate-live: live-ring 1.8s ease-out infinite;
+
+  @keyframes punch-in {
+    0% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+    60% {
+      opacity: 1;
+    }
+    100% {
+      transform: scale(1);
+      opacity: 1;
+    }
+  }
+  @keyframes pop-in {
+    from {
+      transform: translateY(8px) scale(0.98);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+  @keyframes live-ring {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent);
+    }
+    100% {
+      box-shadow: 0 0 0 8px transparent;
+    }
+  }
+}
+
+/* Race-bib numerals: scores, ranks, countdowns, control codes. */
+@utility font-bib {
+  font-stretch: 62%;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.005em;
+}
+
+/* Condensed display cut for headings. */
+@utility font-cond {
+  font-stretch: 75%;
+}
+@utility font-semicond {
+  font-stretch: 87.5%;
+}
+
+@utility pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/*
+ * Layout offsets shared by fixed and sticky chrome:
+ *   --banner-h      height of the offline banner while it shows; sticky headers sit below it
+ *   --toast-offset  distance of toasts from the bottom on phones; grows while a pinned
+ *                   action bar (data-action-bar) sits above the tab bar
+ */
+:root {
+  --banner-h: 0px;
+  --toast-offset: 5.5rem;
+}
+:root:has([data-offline-banner]) {
+  --banner-h: calc(2.25rem + env(safe-area-inset-top));
+}
+@media (max-width: 767px) {
+  :root:has([data-action-bar]) {
+    --toast-offset: 10.5rem;
+  }
+}
+
+/*
+ * Bars pinned to the bottom of the screen would hide whatever keyboard focus
+ * scrolls to; scroll-padding-bottom keeps it above them. Mark the bar:
+ *   data-bottom-nav   the player tab bar (phones)
+ *   data-bottom-bar   a page's own pinned action bar, fixed or sticky (its
+ *                     room is kept at every width; harmless where it's hidden)
+ *   data-action-bar   the task page's action bar, above the tab bar (phones)
+ * Later rules are taller, so the tallest bar on a page wins.
+ */
+@media (max-width: 767px) {
+  :root:has([data-bottom-nav]) {
+    scroll-padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  }
+}
+:root:has([data-bottom-bar]) {
+  scroll-padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+}
+@media (max-width: 767px) {
+  :root:has([data-action-bar]) {
+    scroll-padding-bottom: calc(10rem + env(safe-area-inset-bottom));
+  }
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+    background: var(--paper);
+    /* In-page jumps and focus scrolling land below the sticky header. */
+    scroll-padding-top: calc(4.5rem + var(--banner-h));
+  }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: var(--overprint-wash);
+    color: var(--ink);
+  }
+  :focus-visible {
+    outline: 3px solid var(--overprint);
+    outline-offset: 2px;
+  }
+  /* Skip-link targets take focus only to move the reading position. */
+  main[tabindex="-1"]:focus,
+  h1[tabindex="-1"]:focus {
+    outline: none;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  input,
+  textarea,
+  select,
+  button {
+    font: inherit;
+  }
+  [hidden] {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
